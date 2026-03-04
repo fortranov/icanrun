@@ -1,0 +1,41 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0
+
+# Pydantic & settings
+pydantic==2.10.4
+pydantic-settings==2.7.0
+pydantic[email]==2.10.4
+
+# Auth & security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+python-multipart==0.0.20
+
+# HTTP client (for Garmin, YooKassa)
+httpx==0.28.1
+
+# Payments
+yookassa==3.5.0
+
+# Garmin
+garminconnect==0.2.22
+
+# Utilities
+python-dateutil==2.9.0
+pytz==2024.2
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+httpx==0.28.1
+
+# Dev tools
+python-dotenv==1.0.1
