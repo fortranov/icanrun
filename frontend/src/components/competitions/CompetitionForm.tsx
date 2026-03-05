@@ -59,34 +59,17 @@ const SPORT_OPTIONS: { value: SportType; label: string }[] = [
 // Validation schema
 // ---------------------------------------------------------------------------
 
-const competitionSchema = z
-  .object({
-    name: z.string().min(1, "Введите название").max(255),
-    sport_type: z.enum([
-      "running", "swimming", "cycling", "strength", "triathlon"
-    ] as const),
-    competition_type: z.string().min(1, "Выберите тип"),
-    importance: z.enum(["key", "secondary"] as const),
-    date: z.string().min(1, "Выберите дату"),
-    distance: z
-      .string()
-      .optional()
-      .transform((v) => (v && v !== "" ? parseFloat(v) : undefined))
-      .pipe(z.number().positive().optional()),
-  })
-  .superRefine((data, ctx) => {
-    // Distance is required for swimming and cycling
-    const needsDistance =
-      data.competition_type === "swimming" ||
-      data.competition_type === "cycling";
-    if (needsDistance && !data.distance) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Укажите дистанцию",
-        path: ["distance"],
-      });
-    }
-  });
+// Input schema — all fields as strings (as the user types in the form)
+const competitionSchema = z.object({
+  name: z.string().min(1, "Введите название").max(255),
+  sport_type: z.enum([
+    "running", "swimming", "cycling", "strength", "triathlon"
+  ] as const),
+  competition_type: z.string().min(1, "Выберите тип"),
+  importance: z.enum(["key", "secondary"] as const),
+  date: z.string().min(1, "Выберите дату"),
+  distance: z.string().optional(),
+});
 
 type CompetitionFormValues = z.infer<typeof competitionSchema>;
 
@@ -148,13 +131,24 @@ export function CompetitionForm({
   }, [selectedSport, selectedType, setValue]);
 
   const onSubmit = async (values: CompetitionFormValues) => {
+    // Validate distance required for swimming/cycling
+    const needsDist =
+      values.competition_type === "swimming" ||
+      values.competition_type === "cycling";
+    if (needsDist && (!values.distance || values.distance === "")) {
+      return; // HTML5 required attr will show the error
+    }
+    const distanceNum =
+      values.distance && values.distance !== ""
+        ? parseFloat(values.distance)
+        : undefined;
     await onSave({
       name: values.name,
       sport_type: values.sport_type,
       competition_type: values.competition_type as CompetitionType,
       importance: values.importance,
       date: values.date,
-      distance: values.distance ?? undefined,
+      distance: distanceNum,
     });
   };
 

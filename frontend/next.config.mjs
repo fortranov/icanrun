@@ -3,6 +3,9 @@ const nextConfig = {
   // Enable React strict mode for better development warnings
   reactStrictMode: true,
 
+  // Required for Dockerfile: copies minimal production server to .next/standalone
+  output: "standalone",
+
   // API proxy to backend — avoids CORS issues during development
   async rewrites() {
     return [
