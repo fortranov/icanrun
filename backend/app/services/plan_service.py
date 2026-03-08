@@ -910,13 +910,11 @@ def _next_weekday_from(reference: date, weekday: int) -> date:
     Return the date of the given weekday (0=Mon, 6=Sun) in the same
     ISO week that contains `reference`.
 
-    If the weekday has already passed in that week, we still return it
-    (it might be in the past — that is intentional for historical plan
-    reconstruction; the service skips nothing).
+    Works regardless of which day `reference` falls on — always finds
+    the Monday of that week first, then adds the weekday offset.
     """
-    # reference is the Monday of the week (plan_start aligned to week boundaries)
-    # weekday 0=Monday, so offset is exactly weekday
-    return reference + timedelta(days=weekday)
+    monday = reference - timedelta(days=reference.weekday())
+    return monday + timedelta(days=weekday)
 
 
 def _build_volume_breakdown(workouts: List[Workout]) -> WeeklyVolumeBreakdown:
