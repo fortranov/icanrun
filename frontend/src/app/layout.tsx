@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   description:
     "Платформа для планирования и анализа тренировок по бегу, плаванию, велосипеду и триатлону.",
   keywords: ["триатлон", "тренировки", "бег", "плавание", "велосипед", "план тренировок"],
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
