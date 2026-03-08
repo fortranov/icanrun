@@ -27,13 +27,12 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useCalendarStore } from "@/stores/calendarStore";
 import { useCalendarGrid } from "@/hooks/useCalendar";
 import { DayCell } from "./DayCell";
-import { SportSummaryPanel } from "./SportSummaryPanel";
 import { WorkoutCard } from "./WorkoutCard";
-import { cn, getMonthName, WEEKDAY_NAMES_SHORT } from "@/lib/utils";
+import { formatDuration, getMonthName, WEEKDAY_NAMES_SHORT } from "@/lib/utils";
 import type { Competition, Workout } from "@/types";
 
 interface MonthCalendarProps {
@@ -61,6 +60,28 @@ export function MonthCalendar({
     useCalendarStore();
 
   const grid = useCalendarGrid(currentYear, currentMonth, workouts, competitions);
+
+  // Weekly stats: completed minutes and counts per week row
+  const weeklyStats = useMemo(() =>
+    grid.map((week) => {
+      let totalMinutes = 0;
+      let completedMinutes = 0;
+      let totalCount = 0;
+      let completedCount = 0;
+      for (const day of week) {
+        for (const w of day.workouts) {
+          totalMinutes += w.duration_minutes;
+          totalCount += 1;
+          if (w.is_completed) {
+            completedMinutes += w.duration_minutes;
+            completedCount += 1;
+          }
+        }
+      }
+      return { totalMinutes, completedMinutes, totalCount, completedCount };
+    }),
+    [grid]
+  );
 
   // Track the workout being dragged for DragOverlay
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -107,7 +128,7 @@ export function MonthCalendar({
   return (
     <div className="flex gap-4">
       {/* Main calendar area */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-x-auto">
         {/* Calendar header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -175,7 +196,7 @@ export function MonthCalendar({
         >
           <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
             {/* Weekday header row */}
-            <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+            <div className="grid grid-cols-[repeat(7,1fr)_80px] border-b border-gray-200 bg-gray-50">
               {WEEKDAY_NAMES_SHORT.map((name) => (
                 <div
                   key={name}
@@ -184,23 +205,47 @@ export function MonthCalendar({
                   {name}
                 </div>
               ))}
+              <div className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide border-l border-gray-200">
+                Итого
+              </div>
             </div>
 
             {/* Week rows */}
-            {grid.map((week, weekIdx) => (
-              <div key={weekIdx} className="grid grid-cols-7">
-                {week.map((day) => (
-                  <DayCell
-                    key={day.date}
-                    day={day}
-                    onAddWorkout={onAddWorkout}
-                    onWorkoutClick={onWorkoutClick}
-                    onToggleComplete={onToggleComplete}
-                    onCompetitionClick={onCompetitionClick}
-                  />
-                ))}
-              </div>
-            ))}
+            {grid.map((week, weekIdx) => {
+              const ws = weeklyStats[weekIdx];
+              return (
+                <div key={weekIdx} className="grid grid-cols-[repeat(7,1fr)_80px]">
+                  {week.map((day) => (
+                    <DayCell
+                      key={day.date}
+                      day={day}
+                      onAddWorkout={onAddWorkout}
+                      onWorkoutClick={onWorkoutClick}
+                      onToggleComplete={onToggleComplete}
+                      onCompetitionClick={onCompetitionClick}
+                    />
+                  ))}
+                  {/* Weekly summary cell */}
+                  <div className="border-l border-gray-200 flex flex-col items-center justify-center px-1 py-2 bg-gray-50 gap-0.5">
+                    {ws.totalCount > 0 ? (
+                      <>
+                        <span className="text-xs font-semibold text-green-600 leading-tight">
+                          {formatDuration(ws.completedMinutes)}
+                        </span>
+                        <span className="text-xs text-gray-400 leading-tight">
+                          / {formatDuration(ws.totalMinutes)}
+                        </span>
+                        <span className="text-[10px] text-gray-400 leading-tight">
+                          {ws.completedCount}/{ws.totalCount} тр.
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-gray-300">—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Drag overlay — renders a preview of the dragged workout */}
@@ -218,13 +263,6 @@ export function MonthCalendar({
           </DragOverlay>
         </DndContext>
       </div>
-
-      {/* Right sidebar */}
-      <SportSummaryPanel
-        workouts={workouts}
-        year={currentYear}
-        month={currentMonth}
-      />
     </div>
   );
 }
