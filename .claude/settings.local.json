@@ -6,7 +6,27 @@
       "Bash(npm run:*)",
       "Bash(cmd.exe:*)",
       "Bash(ls:*)",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(claude mcp:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "mcp__coolify__get_infrastructure_overview",
+      "mcp__coolify__list_servers",
+      "mcp__coolify__projects",
+      "mcp__coolify__list_applications",
+      "mcp__coolify__get_version",
+      "mcp__coolify__get_mcp_version",
+      "Read(//c/Users/abram/.config/claude/**)",
+      "Read(//c/Users/abram/AppData/Roaming/claude/**)",
+      "Read(//c/Users/abram/.claude/**)",
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(echo Deploying backend...:*)",
+      "Bash(echo Deploying frontend...:*)",
+      "Bash(echo Redeploying backend...:*)",
+      "Bash(python3:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
