@@ -14,24 +14,17 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { cn, formatDuration, getSportColor, getWorkoutTypeLabel } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+import { Bike, Dumbbell, Footprints, Medal, Waves, type LucideIcon } from "lucide-react";
 import type { Workout } from "@/types";
 
-// Sport icon map — simple SVG paths (inline, no external dependency)
-const SPORT_ICONS: Record<string, string> = {
-  running:   "M13 4a1 1 0 100-2 1 1 0 000 2zM6 7l3 3-2.5 4.5L9 19l2-2 2 5 3-8-3-2 1-4-3-1z",
-  swimming:  "M3 14s2-3 5-3 5 3 8 3 5-3 5-3M3 10s2-3 5-3 5 3 8 3 5-3 5-3",
-  cycling:   "M12 20a5 5 0 100-10 5 5 0 000 10zm0 0V4m-7 8h14",
-  strength:  "M6 12h12M6 12l-2-2m2 2l-2 2M18 12l2-2m-2 2l2 2M9 6v12M15 6v12",
-  triathlon: "M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z",
-};
-
-const SPORT_COLORS_BG: Record<string, string> = {
-  running:   "bg-red-500",
-  swimming:  "bg-blue-500",
-  cycling:   "bg-amber-500",
-  strength:  "bg-violet-500",
-  triathlon: "bg-emerald-500",
+// Sport icon map — recognizable sport-specific icons
+const SPORT_ICONS: Record<string, LucideIcon> = {
+  running: Footprints,
+  swimming: Waves,
+  cycling: Bike,
+  strength: Dumbbell,
+  triathlon: Medal,
 };
 
 const SPORT_COLORS_BORDER: Record<string, string> = {
@@ -82,7 +75,7 @@ export function WorkoutCard({
   const sportColor = SPORT_COLORS_BORDER[workout.sport_type] ?? "border-l-gray-300";
   const sportBg = SPORT_BG_LIGHT[workout.sport_type] ?? "bg-gray-50";
   const sportText = SPORT_TEXT_COLORS[workout.sport_type] ?? "text-gray-600";
-  const iconPath = SPORT_ICONS[workout.sport_type];
+  const SportIcon = SPORT_ICONS[workout.sport_type];
 
   return (
     <div
@@ -110,17 +103,9 @@ export function WorkoutCard({
       />
 
       {/* Sport icon */}
-      <svg
-        viewBox="0 0 24 24"
-        className={cn("w-3 h-3 flex-shrink-0", sportText)}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {iconPath && <path d={iconPath} />}
-      </svg>
+      {SportIcon ? (
+        <SportIcon className={cn("w-3.5 h-3.5 flex-shrink-0", sportText)} strokeWidth={2.2} />
+      ) : null}
 
       {/* Duration */}
       <span

@@ -61,24 +61,18 @@ export function MonthCalendar({
 
   const grid = useCalendarGrid(currentYear, currentMonth, workouts, competitions);
 
-  // Weekly stats: completed minutes and counts per week row
+  // Weekly stats: total workout time and count per week row
   const weeklyStats = useMemo(() =>
     grid.map((week) => {
       let totalMinutes = 0;
-      let completedMinutes = 0;
       let totalCount = 0;
-      let completedCount = 0;
       for (const day of week) {
         for (const w of day.workouts) {
           totalMinutes += w.duration_minutes;
           totalCount += 1;
-          if (w.is_completed) {
-            completedMinutes += w.duration_minutes;
-            completedCount += 1;
-          }
         }
       }
-      return { totalMinutes, completedMinutes, totalCount, completedCount };
+      return { totalMinutes, totalCount };
     }),
     [grid]
   );
@@ -159,26 +153,15 @@ export function MonthCalendar({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!isCurrentMonth && (
-              <button
-                type="button"
-                onClick={goToToday}
-                className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              >
-                Сегодня
-              </button>
-            )}
-
-            {/* Add competition button */}
+          {!isCurrentMonth && (
             <button
               type="button"
-              onClick={() => onAddWorkout("")}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
+              onClick={goToToday}
+              className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             >
-              + Тренировка
+              Сегодня
             </button>
-          </div>
+          )}
         </div>
 
         {/* Loading overlay */}
@@ -196,7 +179,7 @@ export function MonthCalendar({
         >
           <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
             {/* Weekday header row */}
-            <div className="grid grid-cols-[repeat(7,1fr)_80px] border-b border-gray-200 bg-gray-50">
+            <div className="grid grid-cols-8 border-b border-gray-200 bg-gray-50">
               {WEEKDAY_NAMES_SHORT.map((name) => (
                 <div
                   key={name}
@@ -214,7 +197,7 @@ export function MonthCalendar({
             {grid.map((week, weekIdx) => {
               const ws = weeklyStats[weekIdx];
               return (
-                <div key={weekIdx} className="grid grid-cols-[repeat(7,1fr)_80px]">
+                <div key={weekIdx} className="grid grid-cols-8">
                   {week.map((day) => (
                     <DayCell
                       key={day.date}
@@ -226,17 +209,17 @@ export function MonthCalendar({
                     />
                   ))}
                   {/* Weekly summary cell */}
-                  <div className="border-l border-gray-200 flex flex-col items-center justify-center px-1 py-2 bg-gray-50 gap-0.5">
+                  <div className={`border-l border-gray-200 flex flex-col items-center justify-center px-1 py-2 bg-gray-50 gap-0.5 ${weekIdx < grid.length - 1 ? "border-b border-gray-100" : ""}`}>
                     {ws.totalCount > 0 ? (
                       <>
-                        <span className="text-xs font-semibold text-green-600 leading-tight">
-                          {formatDuration(ws.completedMinutes)}
-                        </span>
-                        <span className="text-xs text-gray-400 leading-tight">
-                          / {formatDuration(ws.totalMinutes)}
+                        <span className="text-xs font-semibold text-blue-700 leading-tight">
+                          {formatDuration(ws.totalMinutes)}
                         </span>
                         <span className="text-[10px] text-gray-400 leading-tight">
-                          {ws.completedCount}/{ws.totalCount} тр.
+                          за неделю
+                        </span>
+                        <span className="text-[10px] text-gray-400 leading-tight">
+                          {ws.totalCount} тр.
                         </span>
                       </>
                     ) : (

@@ -86,15 +86,24 @@ export default function DashboardPage() {
       {/* Calendar (hidden on portrait mobile via MobileRotatePrompt CSS) */}
       <div>
         {/* Page actions row */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3">
           <h1 className="text-2xl font-bold text-gray-900">Тренировки</h1>
-          <button
-            type="button"
-            onClick={() => setAddCompetitionOpen(true)}
-            className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            + Соревнование
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAddCompetitionOpen(true)}
+              className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              + Соревнование
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAddWorkout("")}
+              className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              + Тренировка
+            </button>
+          </div>
         </div>
 
         <MonthCalendar
