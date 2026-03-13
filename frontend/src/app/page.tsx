@@ -118,7 +118,7 @@ export default function LandingPage() {
           <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
             <div>
               <p className="inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-1.5 text-xs sm:text-sm text-cyan-100 mb-5">
-                🚀 Тренируйся системно и без перегруза
+                Тренируйся системно и без перегруза
               </p>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-[1.05] tracking-tight mb-5">
                 Планируй тренировки.
