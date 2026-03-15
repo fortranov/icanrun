@@ -212,6 +212,27 @@ WORKOUT_TYPE_DURATION_MULTIPLIER: Dict[Optional[WorkoutType], float] = {
     WorkoutType.RECOVERY:  0.5,   # Shortest & easiest; < 10% of weekly volume
 }
 
+# ---------------------------------------------------------------------------
+# 3:1 mesocycle progressive load multipliers
+# ---------------------------------------------------------------------------
+#
+# Classic Friel 4-week mesocycle pattern:
+#   Week 1 — base load:   80 % of period peak  (adaptation)
+#   Week 2 — build:       90 % of period peak  (progression)
+#   Week 3 — peak load:  100 % of period peak  (overreach)
+#   Week 4 — recovery:    65 % of period peak  (supercompensation)
+#
+# Index corresponds to position within the 4-week cycle (week_idx % 4).
+_CYCLE_LOAD_MULTIPLIERS: List[float] = [0.80, 0.90, 1.00, 0.65]
+
+# Human-readable labels for each position — used in workout descriptions
+_CYCLE_WEEK_LABELS: List[str] = [
+    "базовая нагрузка",
+    "нарастающая",
+    "пиковая",
+    "восстановительная",
+]
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -235,7 +256,7 @@ def _build_session_description(
     duration_minutes: int,
     period_label: str,
     week_num: int,
-    is_recovery: bool,
+    cycle_pos: int,
     settings: "PlanSettings",
 ) -> str:
     """
@@ -254,7 +275,7 @@ def _build_session_description(
         long_ride_speed=settings.long_ride_speed,
         period_label=period_label,
         week_num=week_num,
-        is_recovery_week=is_recovery,
+        cycle_week_label=_CYCLE_WEEK_LABELS[cycle_pos],
     )
 
 
@@ -383,14 +404,15 @@ class PlanGenerator:
         num_weeks: int = period_def["weeks"]
 
         for week_idx in range(num_weeks):
-            # Every 4th week is a recovery week
-            is_recovery = (week_idx + 1) % 4 == 0
+            # 3:1 mesocycle: positions 0→80%, 1→90%, 2→100%, 3→65% (recovery)
+            cycle_pos = week_idx % 4
+            is_recovery = cycle_pos == 3
 
-            # Weekly volume in minutes
+            # Weekly volume in minutes (includes progressive overload multiplier)
             week_minutes = self.calculate_weekly_volume_minutes(
                 period_name=period_name,
                 volume_pct=volume_pct,
-                is_recovery=is_recovery,
+                week_idx=week_idx,
                 max_hours_per_week=max_hours_per_week,
                 distance_type=distance_type,
                 level=settings.athlete_level,
@@ -453,7 +475,7 @@ class PlanGenerator:
                     duration_minutes=session_minutes,
                     period_label=period_def["label"],
                     week_num=week_idx + 1,
-                    is_recovery=is_recovery,
+                    cycle_pos=cycle_pos,
                     settings=settings,
                 )
 
@@ -481,7 +503,7 @@ class PlanGenerator:
                         duration_minutes=60,
                         period_label=period_def["label"],
                         week_num=week_idx + 1,
-                        is_recovery=is_recovery,
+                        cycle_pos=cycle_pos,
                         settings=settings,
                     )
                     workouts.append(Workout(
@@ -520,24 +542,28 @@ class PlanGenerator:
         self,
         period_name: str,
         volume_pct: float,
-        is_recovery: bool,
+        week_idx: int,
         max_hours_per_week: float,
         distance_type: Optional[str],
         level: str,
     ) -> int:
         """
-        Return total training minutes for one week.
+        Return total training minutes for one week using a 3:1 mesocycle pattern.
 
-        The user's max_hours_per_week is the ceiling (peak week target).
-        Each period gets a fraction of that via volume_pct.
-        Recovery weeks take 65% of the regular week's volume.
+        The user's max_hours_per_week × volume_pct is the period's peak volume.
+        Within each 4-week mesocycle the load progresses then drops:
 
-        For triathlon, we also cross-reference the level/distance peak hours
-        table to ensure volumes are realistic.
+          Cycle week 1 (week_idx % 4 == 0): 80 % of period peak  — adaptation
+          Cycle week 2 (week_idx % 4 == 1): 90 % of period peak  — progression
+          Cycle week 3 (week_idx % 4 == 2): 100 % of period peak — overreach
+          Cycle week 4 (week_idx % 4 == 3):  65 % of period peak — recovery
+
+        For periods shorter than 4 weeks no recovery week is inserted — the
+        load simply starts mid-cycle, which creates a natural taper as one
+        period transitions to the next at a different volume_pct.
         """
-        base_minutes = max_hours_per_week * 60.0 * volume_pct
-        if is_recovery:
-            base_minutes *= 0.65
+        cycle_mult = _CYCLE_LOAD_MULTIPLIERS[week_idx % 4]
+        base_minutes = max_hours_per_week * 60.0 * volume_pct * cycle_mult
 
         # Floor: at least 30 min total so we always create at least one session
         return max(30, round(base_minutes))

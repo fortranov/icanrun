@@ -498,7 +498,9 @@ def generate_workout_description(
     swim_pace_sec: Optional[int] = None,          # seconds part of pace/100m
     long_ride_speed: Optional[float] = None,      # km/h
     period_label: Optional[str] = None,           # e.g. "База 1"
-    week_num: Optional[int] = None,               # 1-based week index
+    week_num: Optional[int] = None,               # 1-based week index within period
+    cycle_week_label: Optional[str] = None,       # e.g. "базовая нагрузка", "восстановительная"
+    # Kept for backward compatibility with existing callers / tests
     is_recovery_week: bool = False,
 ) -> str:
     """
@@ -507,7 +509,7 @@ def generate_workout_description(
     The description includes:
       - Warm-up / main set / cool-down breakdown (where applicable)
       - Specific pace / speed targets derived from the athlete's baseline
-      - Period context (period label + week number) appended as a footer
+      - Period context (period label + week number + cycle type) as a footer
 
     Args:
         sport_type: Running, swimming, cycling, strength, or triathlon.
@@ -519,7 +521,8 @@ def generate_workout_description(
         long_ride_speed: Athlete's long-ride baseline speed in km/h.
         period_label: Friel period name in Russian (appended to description).
         week_num: Week index within the period (1-based).
-        is_recovery_week: True when this is the 4th (reduced-volume) week.
+        cycle_week_label: Human-readable 3:1 cycle position, e.g. "пиковая".
+        is_recovery_week: Deprecated — kept for backward compatibility.
 
     Returns:
         A ready-to-display string in Russian.
@@ -555,10 +558,16 @@ def generate_workout_description(
     else:
         body = f"Тренировка {_fmt_duration(duration_minutes)}."
 
-    # Append period context as a footer line
+    # Append period + cycle context as a footer line
     if period_label and week_num is not None:
-        recovery_suffix = " (восст. неделя)" if is_recovery_week else ""
-        body = f"{body}\n{period_label} — неделя {week_num}{recovery_suffix}"
+        # Prefer explicit cycle_week_label; fall back to legacy is_recovery_week flag
+        if cycle_week_label:
+            footer_suffix = f" ({cycle_week_label})"
+        elif is_recovery_week:
+            footer_suffix = " (восст. неделя)"
+        else:
+            footer_suffix = ""
+        body = f"{body}\n{period_label} — неделя {week_num}{footer_suffix}"
     elif period_label:
         body = f"{body}\n{period_label}"
 
