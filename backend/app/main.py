@@ -56,6 +56,7 @@ async def seed_admin() -> None:
                     name="Admin",
                     role=UserRole.ADMIN,
                     is_active=True,
+                    email_confirmed=True,
                 )
                 db.add(admin)
                 await db.flush()
@@ -70,6 +71,11 @@ async def seed_admin() -> None:
                 await db.commit()
                 logger.info(f"Default admin user created: {settings.admin_email}")
             else:
+                # Ensure existing admin has email confirmed (retroactive fix)
+                if not existing.email_confirmed:
+                    existing.email_confirmed = True
+                    await db.commit()
+                    logger.info("Admin email_confirmed flag updated.")
                 logger.info("Admin user already exists, skipping seed.")
         except Exception as e:
             await db.rollback()
