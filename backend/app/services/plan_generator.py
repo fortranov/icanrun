@@ -444,7 +444,43 @@ class PlanGenerator:
                 )
                 workouts.append(workout)
 
+            # Optional strength session on a non-training day
+            if settings.include_strength:
+                strength_day = self._pick_strength_day(selected_days)
+                if strength_day is not None:
+                    strength_date = _next_weekday_from(week_start, strength_day)
+                    strength_comment = _build_session_comment(
+                        period_label=period_def["label"],
+                        week_num=week_idx + 1,
+                        is_recovery=is_recovery,
+                    )
+                    workouts.append(Workout(
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        sport_type=SportType.STRENGTH,
+                        workout_type=None,
+                        source=WorkoutSource.PLANNED,
+                        date=strength_date,
+                        duration_minutes=60,
+                        is_completed=False,
+                        comment=strength_comment,
+                    ))
+
         return workouts
+
+    def _pick_strength_day(self, training_days: List[int]) -> Optional[int]:
+        """
+        Pick the first weekday (Mon=0 … Sun=6) not already used as a
+        training day. Prefers midweek days (Wed=2, Fri=4, Mon=0) so the
+        strength session sits between sport sessions for optimal recovery.
+        Returns None if all 7 days are already occupied.
+        """
+        preferred_order = [2, 4, 0, 6, 1, 3, 5]  # Wed, Fri, Mon, Sun, Tue, Thu, Sat
+        taken = set(training_days)
+        for day in preferred_order:
+            if day not in taken:
+                return day
+        return None
 
     # ------------------------------------------------------------------
     # Volume calculation helpers

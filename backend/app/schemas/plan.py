@@ -53,6 +53,8 @@ class PlanSettings(BaseModel):
         description="Swim pace seconds part per 100m")
     long_ride_speed: Optional[float] = Field(default=None, ge=5.0, le=60.0,
         description="Long ride average speed in km/h")
+    # Add one 60-min strength session per week on a non-training day
+    include_strength: bool = False
 
 
 class WeeklyVolumeBreakdown(BaseModel):

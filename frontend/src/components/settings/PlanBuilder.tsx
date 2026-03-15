@@ -61,6 +61,7 @@ export function PlanBuilder() {
   const [athleteLevel, setAthleteLevel] = useState<AthleteLevel>("intermediate");
   const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(4);
   const [distanceType, setDistanceType] = useState<TriathlonDistance>("olympic");
+  const [includeStrength, setIncludeStrength] = useState<boolean>(false);
   const [longRunPace, setLongRunPace] = useState<string>("");
   const [swimPaceMin, setSwimPaceMin] = useState<string>("");
   const [swimPaceSec, setSwimPaceSec] = useState<string>("");
@@ -108,6 +109,7 @@ export function PlanBuilder() {
           swim_pace_min: sport === "swimming" && swimPaceMin !== "" ? Number(swimPaceMin) : null,
           swim_pace_sec: sport === "swimming" && swimPaceSec !== "" ? Number(swimPaceSec) : null,
           long_ride_speed: sport === "cycling" && longRideSpeed !== "" ? Number(longRideSpeed) : null,
+          include_strength: includeStrength,
         },
       };
       const result = await generatePlan(req);
@@ -480,6 +482,23 @@ export function PlanBuilder() {
             />
           </div>
         </div>
+
+        {/* Strength gym checkbox */}
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeStrength}
+            onChange={(e) => setIncludeStrength(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">
+            Добавить тренировку в тренажёрном зале (1 час в неделю)
+            <span className="block text-xs text-gray-400 mt-0.5">
+              Одна силовая тренировка будет добавлена в план каждую неделю
+              в день, свободный от основных тренировок.
+            </span>
+          </span>
+        </label>
 
         {/* Errors / success */}
         {serverError && (

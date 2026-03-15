@@ -210,6 +210,7 @@ export interface PlanSettings {
   swim_pace_min?: number | null;
   swim_pace_sec?: number | null;
   long_ride_speed?: number | null;
+  include_strength?: boolean;
 }
 
 export interface PlanGenerateRequest {
