@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app.models.workout import Workout
 from app.schemas.plan import PlanSettings
+from app.services.workout_description import generate_workout_description
 from app.utils.enums import SportType, WorkoutSource, WorkoutType
 
 logger = logging.getLogger(__name__)
@@ -228,12 +229,33 @@ def _next_weekday_from(reference: date, weekday: int) -> date:
     return monday + timedelta(days=weekday)
 
 
-def _build_session_comment(
-    period_label: str, week_num: int, is_recovery: bool
+def _build_session_description(
+    sport_type: SportType,
+    workout_type,
+    duration_minutes: int,
+    period_label: str,
+    week_num: int,
+    is_recovery: bool,
+    settings: "PlanSettings",
 ) -> str:
-    """Build a descriptive comment for a planned workout."""
-    suffix = " (восстановительная неделя)" if is_recovery else ""
-    return f"{period_label} — неделя {week_num}{suffix}"
+    """
+    Build a rich workout description using pace/speed zones from PlanSettings.
+
+    Delegates to ``generate_workout_description`` which handles per-sport
+    zone calculations and formats warm-up / main-set / cool-down breakdowns.
+    """
+    return generate_workout_description(
+        sport_type=sport_type,
+        workout_type=workout_type,
+        duration_minutes=duration_minutes,
+        long_run_pace=settings.long_run_pace,
+        swim_pace_min=settings.swim_pace_min,
+        swim_pace_sec=settings.swim_pace_sec,
+        long_ride_speed=settings.long_ride_speed,
+        period_label=period_label,
+        week_num=week_num,
+        is_recovery_week=is_recovery,
+    )
 
 
 def _infer_distance_from_competition(competition) -> Optional[str]:
@@ -424,11 +446,15 @@ class PlanGenerator:
                 # Calculate actual calendar date for this session
                 session_date = _next_weekday_from(week_start, weekday_num)
 
-                # Build comment with period context
-                comment = _build_session_comment(
+                # Build descriptive comment with pace zones and period context
+                comment = _build_session_description(
+                    sport_type=SportType(sport_str),
+                    workout_type=workout_type,
+                    duration_minutes=session_minutes,
                     period_label=period_def["label"],
                     week_num=week_idx + 1,
                     is_recovery=is_recovery,
+                    settings=settings,
                 )
 
                 workout = Workout(
@@ -449,10 +475,14 @@ class PlanGenerator:
                 strength_day = self._pick_strength_day(selected_days)
                 if strength_day is not None:
                     strength_date = _next_weekday_from(week_start, strength_day)
-                    strength_comment = _build_session_comment(
+                    strength_comment = _build_session_description(
+                        sport_type=SportType.STRENGTH,
+                        workout_type=None,
+                        duration_minutes=60,
                         period_label=period_def["label"],
                         week_num=week_idx + 1,
                         is_recovery=is_recovery,
+                        settings=settings,
                     )
                     workouts.append(Workout(
                         user_id=user_id,
