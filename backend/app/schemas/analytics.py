@@ -21,8 +21,12 @@ class MonthlyStats(BaseModel):
     completed_minutes: int
     total_workouts: int
     completed_workouts: int
+    # Completion rate computed only from workouts on/before today (past days).
     # 0.0–100.0
     completion_rate: float
+    # Counts used for the completion_rate denominator (past days only).
+    past_total_workouts: int = 0
+    past_completed_workouts: int = 0
     # sport_type_value → breakdown
     by_sport: Dict[str, SportBreakdown] = {}
 

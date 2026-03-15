@@ -296,7 +296,11 @@ export interface MonthlyStats {
   completed_minutes: number;
   total_workouts: number;
   completed_workouts: number;
+  /** Completion rate computed only from workouts on/before today. */
   completion_rate: number;
+  /** Counts used for completion_rate (past days only). */
+  past_total_workouts: number;
+  past_completed_workouts: number;
   by_sport: Partial<Record<SportType, SportBreakdown>>;
 }
 

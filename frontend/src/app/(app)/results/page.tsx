@@ -109,7 +109,7 @@ export default function ResultsPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-700">
-            Объём тренировок по дням
+            Объём тренировок по неделям
           </h2>
           {/* Legend */}
           <div className="flex items-center gap-4 text-xs text-gray-500">

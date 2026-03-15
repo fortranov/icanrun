@@ -61,7 +61,7 @@ export function SportStats({ stats, selectedSport }: SportStatsProps) {
       <StatCard
         label="Выполнение"
         value={`${stats.completion_rate}%`}
-        sub={`${stats.completed_workouts} из ${stats.total_workouts}`}
+        sub={`${stats.past_completed_workouts} из ${stats.past_total_workouts} (прошедшие дни)`}
         colorClass={
           stats.completion_rate >= 80
             ? "text-green-600"

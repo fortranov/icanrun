@@ -55,10 +55,15 @@ class AnalyticsService:
         """
         workouts = await self.repo.get_by_month(user_id, year, month, sport_type)
 
+        today = date.today()
+
         total_minutes = 0
         completed_minutes = 0
         total_count = 0
         completed_count = 0
+        # Past-only counters for completion rate (workouts on/before today)
+        past_total = 0
+        past_completed = 0
         by_sport: Dict[str, SportBreakdown] = {}
 
         for w in workouts:
@@ -68,6 +73,13 @@ class AnalyticsService:
             if w.is_completed:
                 completed_minutes += w.duration_minutes
                 completed_count += 1
+
+            # Accumulate past-days counters for completion rate
+            workout_date = w.date if isinstance(w.date, date) else date.fromisoformat(str(w.date))
+            if workout_date <= today:
+                past_total += 1
+                if w.is_completed:
+                    past_completed += 1
 
             sport_key = w.sport_type.value if hasattr(w.sport_type, "value") else w.sport_type
             if sport_key not in by_sport:
@@ -79,13 +91,15 @@ class AnalyticsService:
                 by_sport[sport_key].completed_minutes += w.duration_minutes
                 by_sport[sport_key].completed_workouts += 1
 
+        # Completion rate based only on past days (excludes future planned workouts)
         completion_rate = (
-            round(completed_count / total_count * 100, 1) if total_count > 0 else 0.0
+            round(past_completed / past_total * 100, 1) if past_total > 0 else 0.0
         )
 
         logger.debug(
             f"Monthly stats user={user_id} {year}-{month:02d}: "
-            f"workouts={total_count} completed={completed_count}"
+            f"workouts={total_count} completed={completed_count} "
+            f"past={past_total} past_completed={past_completed}"
         )
 
         return MonthlyStats(
@@ -96,6 +110,8 @@ class AnalyticsService:
             total_workouts=total_count,
             completed_workouts=completed_count,
             completion_rate=completion_rate,
+            past_total_workouts=past_total,
+            past_completed_workouts=past_completed,
             by_sport=by_sport,
         )
 
