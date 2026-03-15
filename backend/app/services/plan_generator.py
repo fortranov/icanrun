@@ -78,13 +78,13 @@ PERIOD_CONFIG: Dict[str, Tuple[str, str, int, int]] = {
 _DIST_BASE1 = [
     (WorkoutType.RECOVERY, 0.30),
     (WorkoutType.LONG, 0.40),
-    (None, 0.30),
+    (WorkoutType.AEROBIC, 0.30),
 ]
 _DIST_BASE2 = [
     (WorkoutType.RECOVERY, 0.20),
     (WorkoutType.LONG, 0.40),
     (WorkoutType.THRESHOLD, 0.20),
-    (None, 0.20),
+    (WorkoutType.AEROBIC, 0.20),
 ]
 _DIST_BASE3 = [
     (WorkoutType.RECOVERY, 0.15),
@@ -113,11 +113,11 @@ _DIST_PEAK = [
 _DIST_RACE = [
     (WorkoutType.RECOVERY, 0.50),
     (WorkoutType.LONG, 0.30),
-    (None, 0.20),
+    (WorkoutType.AEROBIC, 0.20),
 ]
 _DIST_TRANSITION = [
     (WorkoutType.RECOVERY, 0.70),
-    (None, 0.30),
+    (WorkoutType.AEROBIC, 0.30),
 ]
 
 PERIOD_WORKOUT_DISTRIBUTION: Dict[str, List[Tuple[Optional[WorkoutType], float]]] = {
@@ -205,7 +205,7 @@ SESSION_MINUTES: Dict[str, Dict[str, int]] = {
 # and ~3× the time of a RECOVERY session, regardless of sport type.
 WORKOUT_TYPE_DURATION_MULTIPLIER: Dict[Optional[WorkoutType], float] = {
     WorkoutType.LONG:      1.5,   # Longest session; ~25–30% of weekly volume
-    None:                  1.1,   # General aerobic: slightly above-average
+    WorkoutType.AEROBIC:   1.1,   # General aerobic base: slightly above-average
     WorkoutType.THRESHOLD: 1.0,   # Medium: warm-up + LT work + cool-down
     WorkoutType.INTERVAL:  0.75,  # Shorter but most intense; high TSS/minute
     WorkoutType.RECOVERY:  0.5,   # Shortest & easiest; < 10% of weekly volume

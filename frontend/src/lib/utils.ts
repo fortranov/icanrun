@@ -61,6 +61,7 @@ export function getWorkoutTypeLabel(type: WorkoutType | null): string {
     long: "Длинная",
     interval: "Интервалы",
     threshold: "Пороговая",
+    aerobic: "Аэробная",
   };
   return labels[type] ?? type;
 }

@@ -17,6 +17,7 @@ class WorkoutType(str, Enum):
     LONG = "long"
     INTERVAL = "interval"
     THRESHOLD = "threshold"
+    AEROBIC = "aerobic"
 
 
 class WorkoutSource(str, Enum):

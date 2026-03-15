@@ -12,7 +12,7 @@ export type SportType =
   | "strength"
   | "triathlon";
 
-export type WorkoutType = "recovery" | "long" | "interval" | "threshold";
+export type WorkoutType = "recovery" | "long" | "interval" | "threshold" | "aerobic";
 
 export type WorkoutSource = "planned" | "manual" | "garmin";
 
