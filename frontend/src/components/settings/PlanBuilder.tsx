@@ -28,6 +28,61 @@ import type {
   TriathlonDistance,
 } from "@/types";
 
+// ---------------------------------------------------------------------------
+// Pace format helpers  (MM:SS ↔ decimal min/km)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a user-typed pace string into "M:SS" canonical form.
+ * Accepts: "5:30", "530", "5.5" (decimal), "5 30".
+ * Returns the canonical string, or the original if unparseable.
+ */
+function formatPaceInput(raw: string): string {
+  const s = raw.trim();
+  if (!s) return "";
+
+  // Already MM:SS
+  if (/^\d+:\d{1,2}$/.test(s)) {
+    const [mStr, sStr] = s.split(":");
+    const m = Math.max(3, Math.min(20, parseInt(mStr, 10)));
+    const sec = Math.max(0, Math.min(59, parseInt(sStr, 10)));
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  }
+
+  // Decimal, e.g. "5.5"
+  if (/^\d+\.\d+$/.test(s)) {
+    const val = parseFloat(s);
+    if (!isNaN(val)) {
+      const m = Math.floor(val);
+      const sec = Math.round((val - m) * 60);
+      return `${m}:${String(sec).padStart(2, "0")}`;
+    }
+  }
+
+  // 3–4 digits without separator: "530" → "5:30", "0530" → "5:30"
+  if (/^\d{3,4}$/.test(s)) {
+    const secPart = parseInt(s.slice(-2), 10);
+    const minPart = parseInt(s.slice(0, s.length - 2), 10);
+    if (secPart < 60) return `${minPart}:${String(secPart).padStart(2, "0")}`;
+  }
+
+  return s;
+}
+
+/** Convert "M:SS" string to decimal min/km for the API. */
+function paceToDecimal(mmss: string): number | null {
+  if (!mmss) return null;
+  if (mmss.includes(":")) {
+    const [mStr, sStr] = mmss.split(":");
+    const m = parseInt(mStr, 10);
+    const sec = parseInt(sStr || "0", 10);
+    if (isNaN(m) || isNaN(sec)) return null;
+    return m + sec / 60;
+  }
+  const n = parseFloat(mmss);
+  return isNaN(n) ? null : n;
+}
+
 const SPORTS: { value: SportType; label: string; color: string }[] = [
   { value: "running",   label: "Бег",        color: "bg-red-500" },
   { value: "swimming",  label: "Плавание",   color: "bg-blue-500" },
@@ -91,7 +146,7 @@ export function PlanBuilder() {
       sport,
       compType,
       athleteLevel,
-      longRunPace !== "" ? Number(longRunPace) : null,
+      paceToDecimal(longRunPace),
       swimPaceMin !== "" ? Number(swimPaceMin) : null,
       swimPaceSec !== "" ? Number(swimPaceSec) : null,
       longRideSpeed !== "" ? Number(longRideSpeed) : null,
@@ -124,7 +179,7 @@ export function PlanBuilder() {
           athlete_level: athleteLevel,
           sessions_per_week: sessionsPerWeek,
           distance_type: sport === "triathlon" ? distanceType : null,
-          long_run_pace: sport === "running" && longRunPace !== "" ? Number(longRunPace) : null,
+          long_run_pace: sport === "running" ? paceToDecimal(longRunPace) : null,
           swim_pace_min: sport === "swimming" && swimPaceMin !== "" ? Number(swimPaceMin) : null,
           swim_pace_sec: sport === "swimming" && swimPaceSec !== "" ? Number(swimPaceSec) : null,
           long_ride_speed: sport === "cycling" && longRideSpeed !== "" ? Number(longRideSpeed) : null,
@@ -365,19 +420,18 @@ export function PlanBuilder() {
             </label>
             <div className="flex items-center gap-2">
               <input
-                type="number"
-                min={3}
-                max={20}
-                step={0.1}
-                placeholder="5.5"
+                type="text"
+                inputMode="numeric"
+                placeholder="5:30"
                 value={longRunPace}
                 onChange={(e) => setLongRunPace(e.target.value)}
+                onBlur={(e) => setLongRunPace(formatPaceInput(e.target.value))}
                 className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               <span className="text-sm text-gray-500">мин/км</span>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Например, 5.5 = 5:30/км. Используется для калибровки зон интенсивности.
+              Введите в формате мм:сс, например 5:30. Используется для калибровки зон интенсивности.
             </p>
           </div>
         )}
