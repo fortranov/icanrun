@@ -31,7 +31,6 @@ const SPORTS: { value: SportType; label: string; color: string }[] = [
   { value: "running",   label: "Бег",        color: "bg-red-500" },
   { value: "swimming",  label: "Плавание",   color: "bg-blue-500" },
   { value: "cycling",   label: "Велосипед",  color: "bg-amber-500" },
-  { value: "strength",  label: "Силовые",    color: "bg-violet-500" },
   { value: "triathlon", label: "Триатлон",   color: "bg-emerald-500" },
 ];
 

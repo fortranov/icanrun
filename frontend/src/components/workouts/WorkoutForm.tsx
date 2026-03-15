@@ -23,7 +23,7 @@ const workoutSchema = z.object({
     "running", "swimming", "cycling", "strength", "triathlon"
   ] as const),
   workout_type: z.enum([
-    "recovery", "long", "interval", "threshold"
+    "recovery", "long", "interval", "threshold", "aerobic"
   ] as const).nullable().optional(),
   date: z.string().min(1, "Выберите дату"),
   duration_minutes: z
@@ -51,6 +51,7 @@ const SPORT_OPTIONS: { value: SportType; label: string; color: string }[] = [
 const WORKOUT_TYPE_OPTIONS: { value: WorkoutType; label: string }[] = [
   { value: "recovery",  label: "Восстановление" },
   { value: "long",      label: "Длинная" },
+  { value: "aerobic",   label: "Аэробная" },
   { value: "interval",  label: "Интервалы" },
   { value: "threshold", label: "Пороговая" },
 ];
