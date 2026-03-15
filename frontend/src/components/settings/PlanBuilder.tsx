@@ -15,8 +15,9 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSubscription } from "@/hooks/useSubscription";
+import { getVolumeRecommendation } from "@/lib/planRecommendations";
 import { usePlans, useGeneratePlan, useDeletePlan } from "@/hooks/usePlans";
 import { useCompetitions } from "@/hooks/useCompetitions";
 import { cn, getSportLabel, WEEKDAY_NAMES_FULL, formatDuration } from "@/lib/utils";
@@ -81,6 +82,24 @@ export function PlanBuilder() {
   const futureCompetitions = competitions.filter(
     (c) => new Date(c.date) > new Date()
   );
+
+  // Auto-update maxHours and sessionsPerWeek when inputs affecting volume change
+  useEffect(() => {
+    const selectedComp = competitions.find((c) => c.id === competitionId);
+    const compType = selectedComp?.competition_type ?? null;
+    const rec = getVolumeRecommendation(
+      sport,
+      compType,
+      athleteLevel,
+      longRunPace !== "" ? Number(longRunPace) : null,
+      swimPaceMin !== "" ? Number(swimPaceMin) : null,
+      swimPaceSec !== "" ? Number(swimPaceSec) : null,
+      longRideSpeed !== "" ? Number(longRideSpeed) : null,
+    );
+    setMaxHours(rec.hours);
+    setSessionsPerWeek(rec.sessions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sport, competitionId, athleteLevel, longRunPace, swimPaceMin, swimPaceSec, longRideSpeed, competitions.length]);
 
   const toggleDay = (day: number) => {
     setPreferredDays((prev) =>
@@ -456,6 +475,9 @@ export function PlanBuilder() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Макс. часов в неделю
+              <span className="ml-1.5 text-xs font-normal text-blue-500">
+                рекомендуется
+              </span>
             </label>
             <input
               type="number"
@@ -470,6 +492,9 @@ export function PlanBuilder() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Занятий в неделю
+              <span className="ml-1.5 text-xs font-normal text-blue-500">
+                рекомендуется
+              </span>
             </label>
             <input
               type="number"
