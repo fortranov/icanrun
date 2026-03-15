@@ -124,16 +124,32 @@ export function useLogin() {
 // useRegister
 // ---------------------------------------------------------------------------
 
+interface RegisterResponse {
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type: string;
+  requires_confirmation: boolean;
+}
+
 /**
  * Registration mutation.
- * On success: stores tokens, fetches /users/me, updates authStore.
+ *
+ * Returns { requiresConfirmation: true } when the backend has email confirmation
+ * enabled. In that case no tokens are issued and the caller should show the
+ * "check your inbox" screen instead of redirecting to /dashboard.
+ *
+ * On normal success: stores tokens, fetches /users/me, updates authStore, redirects.
  */
 export function useRegister() {
   const { login } = useAuthStore();
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  return useMutation<void, AxiosError<ApiErrorDetail>, RegisterPayload>({
+  return useMutation<
+    { requiresConfirmation: boolean },
+    AxiosError<ApiErrorDetail>,
+    RegisterPayload
+  >({
     mutationFn: async (payload) => {
       const tokenRes = await authApi.register(
         payload.email,
@@ -142,10 +158,14 @@ export function useRegister() {
         // Pass optional profile fields via the extended register call
         payload as object
       );
-      const { access_token, refresh_token } = tokenRes.data as {
-        access_token: string;
-        refresh_token: string;
-      };
+      const data = tokenRes.data as RegisterResponse;
+
+      if (data.requires_confirmation) {
+        return { requiresConfirmation: true };
+      }
+
+      const access_token = data.access_token!;
+      const refresh_token = data.refresh_token!;
 
       setTokens(access_token, refresh_token);
 
@@ -154,9 +174,13 @@ export function useRegister() {
 
       login(user as User, access_token, refresh_token, subscription ?? undefined);
       queryClient.setQueryData(authKeys.me, meRes.data);
+
+      return { requiresConfirmation: false };
     },
-    onSuccess: () => {
-      router.push("/dashboard");
+    onSuccess: ({ requiresConfirmation }) => {
+      if (!requiresConfirmation) {
+        router.push("/dashboard");
+      }
     },
   });
 }

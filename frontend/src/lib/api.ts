@@ -151,6 +151,12 @@ export const authApi = {
   },
 
   me: () => apiClient.get("/users/me"),
+
+  confirmEmail: (token: string) =>
+    apiClient.post(`/auth/confirm-email?token=${encodeURIComponent(token)}`),
+
+  resendConfirmation: (email: string) =>
+    apiClient.post("/auth/resend-confirmation", { email }),
 };
 
 export const workoutsApi = {
@@ -239,4 +245,6 @@ export const adminApi = {
   settings: () => apiClient.get("/admin/settings"),
 
   updateSettings: (data: object) => apiClient.patch("/admin/settings", data),
+
+  testEmail: () => apiClient.post("/admin/settings/test-email"),
 };

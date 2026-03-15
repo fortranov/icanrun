@@ -85,6 +85,7 @@ async def regular_user(db_session: AsyncSession) -> User:
         name="Test User",
         role=UserRole.USER,
         is_active=True,
+        email_confirmed=True,
     )
     db_session.add(user)
     await db_session.flush()
@@ -109,6 +110,7 @@ async def admin_user(db_session: AsyncSession) -> User:
         name="Admin User",
         role=UserRole.ADMIN,
         is_active=True,
+        email_confirmed=True,
     )
     db_session.add(user)
     await db_session.flush()

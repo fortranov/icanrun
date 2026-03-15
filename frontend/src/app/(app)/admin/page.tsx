@@ -5,7 +5,7 @@
  *
  * Sections:
  *   1. User Management — list all users, change role/subscription
- *   2. App Settings — toggle Google OAuth enabled/disabled
+ *   2. App Settings — Google OAuth toggle + full email/SMTP settings
  */
 import { useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
@@ -29,6 +29,14 @@ interface AppSettings {
   google_client_secret: string;
   maintenance_mode: boolean;
   registration_open: boolean;
+  // Email confirmation settings
+  email_confirmation_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_from_email: string;
+  smtp_from_name: string;
+  confirmation_token_hours: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +239,64 @@ function UserManagement() {
 }
 
 // ---------------------------------------------------------------------------
+// Toggle switch helper
+// ---------------------------------------------------------------------------
+
+function Toggle({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      className={cn(
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50",
+        checked ? "bg-blue-600" : "bg-gray-200"
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
+          checked ? "translate-x-6" : "translate-x-1"
+        )}
+      />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Input field helper
+// ---------------------------------------------------------------------------
+
+function SettingField({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      {children}
+      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+    </div>
+  );
+}
+
+const inputClass =
+  "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white";
+
+// ---------------------------------------------------------------------------
 // App Settings Component
 // ---------------------------------------------------------------------------
 
@@ -238,6 +304,15 @@ function AppSettingsBlock() {
   const queryClient = useQueryClient();
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState<
+    "idle" | "sending" | "ok" | "error"
+  >("idle");
+
+  // Local form state for editable fields
+  const [form, setForm] = useState<Partial<AppSettings> & {
+    smtp_password?: string;
+    google_client_secret?: string;
+  }>({});
 
   const { data: settings, isLoading } = useQuery<AppSettings>({
     queryKey: ["admin", "settings"],
@@ -245,10 +320,31 @@ function AppSettingsBlock() {
       const res = await adminApi.settings();
       return res.data as AppSettings;
     },
+    // Sync loaded data into form state on first load
+    select: (data) => {
+      setForm((prev) =>
+        Object.keys(prev).length === 0
+          ? {
+              google_oauth_enabled: data.google_oauth_enabled,
+              google_client_id: data.google_client_id,
+              google_client_secret: "",
+              email_confirmation_enabled: data.email_confirmation_enabled,
+              smtp_host: data.smtp_host,
+              smtp_port: data.smtp_port,
+              smtp_user: data.smtp_user,
+              smtp_password: "",
+              smtp_from_email: data.smtp_from_email,
+              smtp_from_name: data.smtp_from_name,
+              confirmation_token_hours: data.confirmation_token_hours,
+            }
+          : prev
+      );
+      return data;
+    },
   });
 
   const { mutateAsync: saveSettings, isPending: isSaving } = useMutation({
-    mutationFn: async (data: Partial<AppSettings>) => {
+    mutationFn: async (data: object) => {
       const res = await adminApi.updateSettings(data);
       return res.data as AppSettings;
     },
@@ -257,6 +353,8 @@ function AppSettingsBlock() {
       setSettingsError(null);
       setSettingsSuccess(true);
       setTimeout(() => setSettingsSuccess(false), 3000);
+      // Clear password fields after save
+      setForm((prev) => ({ ...prev, smtp_password: "", google_client_secret: "" }));
     },
     onError: (err: unknown) => {
       const msg =
@@ -266,11 +364,38 @@ function AppSettingsBlock() {
     },
   });
 
-  const handleToggleGoogleAuth = async () => {
-    if (!settings) return;
-    await saveSettings({
-      google_oauth_enabled: !settings.google_oauth_enabled,
-    });
+  const handleSave = async () => {
+    // Build payload — only send smtp_password / google_client_secret if non-empty
+    const payload: Record<string, unknown> = {
+      google_oauth_enabled: form.google_oauth_enabled,
+      google_client_id: form.google_client_id ?? "",
+      email_confirmation_enabled: form.email_confirmation_enabled,
+      smtp_host: form.smtp_host ?? "",
+      smtp_port: form.smtp_port ?? 587,
+      smtp_user: form.smtp_user ?? "",
+      smtp_from_email: form.smtp_from_email ?? "",
+      smtp_from_name: form.smtp_from_name ?? "ICanRun",
+      confirmation_token_hours: form.confirmation_token_hours ?? 24,
+    };
+    if (form.smtp_password) payload.smtp_password = form.smtp_password;
+    if (form.google_client_secret) payload.google_client_secret = form.google_client_secret;
+    await saveSettings(payload);
+  };
+
+  const handleTestEmail = async () => {
+    setTestEmailStatus("sending");
+    try {
+      await adminApi.testEmail();
+      setTestEmailStatus("ok");
+      setTimeout(() => setTestEmailStatus("idle"), 4000);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Ошибка отправки";
+      setSettingsError(msg);
+      setTestEmailStatus("error");
+      setTimeout(() => setTestEmailStatus("idle"), 4000);
+    }
   };
 
   if (isLoading) {
@@ -290,7 +415,7 @@ function AppSettingsBlock() {
         </h2>
       </div>
 
-      <div className="px-6 py-5 space-y-4">
+      <div className="px-6 py-5 space-y-6">
         {settingsError && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
             {settingsError}
@@ -302,43 +427,229 @@ function AppSettingsBlock() {
           </div>
         )}
 
-        {/* Google OAuth toggle */}
-        <div className="flex items-center justify-between py-3 border-b border-gray-100">
-          <div>
-            <p className="text-sm font-medium text-gray-800">Google OAuth</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Разрешить вход через Google аккаунт
-            </p>
+        {/* ---------------------------------------------------------------- */}
+        {/* Google OAuth section                                              */}
+        {/* ---------------------------------------------------------------- */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Google OAuth</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Включить Google OAuth</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Разрешить вход через Google аккаунт
+                </p>
+              </div>
+              <Toggle
+                checked={form.google_oauth_enabled ?? settings?.google_oauth_enabled ?? false}
+                onChange={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    google_oauth_enabled: !(prev.google_oauth_enabled ?? settings?.google_oauth_enabled),
+                  }))
+                }
+                disabled={isSaving}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <SettingField label="Google Client ID">
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={form.google_client_id ?? ""}
+                  onChange={(e) => setForm((prev) => ({ ...prev, google_client_id: e.target.value }))}
+                  placeholder="xxx.apps.googleusercontent.com"
+                />
+              </SettingField>
+              <SettingField label="Google Client Secret" hint="Оставьте пустым, чтобы не менять">
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={form.google_client_secret ?? ""}
+                  onChange={(e) => setForm((prev) => ({ ...prev, google_client_secret: e.target.value }))}
+                  placeholder="Новый секрет (необязательно)"
+                />
+              </SettingField>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleToggleGoogleAuth}
-            disabled={isSaving}
-            className={cn(
-              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50",
-              settings?.google_oauth_enabled ? "bg-blue-600" : "bg-gray-200"
-            )}
-          >
-            <span
-              className={cn(
-                "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-                settings?.google_oauth_enabled ? "translate-x-6" : "translate-x-1"
-              )}
-            />
-          </button>
         </div>
 
-        {/* Maintenance mode info */}
-        <div className="flex items-center justify-between py-3">
-          <div>
-            <p className="text-sm font-medium text-gray-800">Режим обслуживания</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Отключает регистрацию и показывает заглушку новым пользователям
-            </p>
+        <hr className="border-gray-100" />
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Email confirmation section                                        */}
+        {/* ---------------------------------------------------------------- */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            Подтверждение email при регистрации
+          </h3>
+          <div className="space-y-4">
+            {/* Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  Требовать подтверждение email
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Новые пользователи получат письмо со ссылкой активации
+                </p>
+              </div>
+              <Toggle
+                checked={
+                  form.email_confirmation_enabled ??
+                  settings?.email_confirmation_enabled ??
+                  false
+                }
+                onChange={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    email_confirmation_enabled: !(
+                      prev.email_confirmation_enabled ??
+                      settings?.email_confirmation_enabled
+                    ),
+                  }))
+                }
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* Token TTL */}
+            <SettingField
+              label="Срок действия ссылки (часов)"
+              hint="Сколько часов действительна ссылка подтверждения"
+            >
+              <input
+                type="number"
+                min={1}
+                max={168}
+                className={inputClass + " w-32"}
+                value={form.confirmation_token_hours ?? 24}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    confirmation_token_hours: parseInt(e.target.value, 10) || 24,
+                  }))
+                }
+              />
+            </SettingField>
+
+            {/* SMTP settings */}
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Настройки SMTP
+              </p>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <SettingField label="SMTP хост">
+                  <input
+                    type="text"
+                    className={inputClass}
+                    value={form.smtp_host ?? ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, smtp_host: e.target.value }))}
+                    placeholder="smtp.gmail.com"
+                  />
+                </SettingField>
+                <SettingField label="SMTP порт">
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    className={inputClass}
+                    value={form.smtp_port ?? 587}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        smtp_port: parseInt(e.target.value, 10) || 587,
+                      }))
+                    }
+                    placeholder="587"
+                  />
+                </SettingField>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <SettingField label="SMTP логин">
+                  <input
+                    type="text"
+                    className={inputClass}
+                    value={form.smtp_user ?? ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, smtp_user: e.target.value }))}
+                    placeholder="user@gmail.com"
+                  />
+                </SettingField>
+                <SettingField label="SMTP пароль" hint="Оставьте пустым, чтобы не менять">
+                  <input
+                    type="password"
+                    className={inputClass}
+                    value={form.smtp_password ?? ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, smtp_password: e.target.value }))}
+                    placeholder="Новый пароль (необязательно)"
+                  />
+                </SettingField>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <SettingField label="Email отправителя">
+                  <input
+                    type="email"
+                    className={inputClass}
+                    value={form.smtp_from_email ?? ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, smtp_from_email: e.target.value }))}
+                    placeholder="noreply@icanrun.app"
+                  />
+                </SettingField>
+                <SettingField label="Имя отправителя">
+                  <input
+                    type="text"
+                    className={inputClass}
+                    value={form.smtp_from_name ?? "ICanRun"}
+                    onChange={(e) => setForm((prev) => ({ ...prev, smtp_from_name: e.target.value }))}
+                    placeholder="ICanRun"
+                  />
+                </SettingField>
+              </div>
+            </div>
           </div>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-            В разработке
-          </span>
+        </div>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Action buttons                                                    */}
+        {/* ---------------------------------------------------------------- */}
+        <div className="flex flex-wrap gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className={cn(
+              "px-5 py-2 rounded-lg text-sm font-medium transition-colors",
+              "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            )}
+          >
+            {isSaving ? "Сохранение..." : "Сохранить настройки"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTestEmail}
+            disabled={testEmailStatus === "sending" || isSaving}
+            className={cn(
+              "px-5 py-2 rounded-lg text-sm font-medium transition-colors border",
+              testEmailStatus === "ok"
+                ? "border-green-400 text-green-700 bg-green-50"
+                : testEmailStatus === "error"
+                ? "border-red-400 text-red-700 bg-red-50"
+                : "border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            )}
+          >
+            {testEmailStatus === "sending"
+              ? "Отправка..."
+              : testEmailStatus === "ok"
+              ? "Письмо отправлено"
+              : testEmailStatus === "error"
+              ? "Ошибка отправки"
+              : "Проверить подключение"}
+          </button>
         </div>
       </div>
     </div>

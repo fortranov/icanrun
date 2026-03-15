@@ -95,6 +95,7 @@ function Field({
 export default function RegisterPage() {
   const registerMutation = useRegister();
   const [showProfile, setShowProfile] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
 
   const {
     register,
@@ -113,7 +114,13 @@ export default function RegisterPage() {
 
   const onSubmit = (values: RegisterFormValues) => {
     const { password_confirm, ...payload } = values;
-    registerMutation.mutate(payload);
+    registerMutation.mutate(payload, {
+      onSuccess: ({ requiresConfirmation }) => {
+        if (requiresConfirmation) {
+          setRegisteredEmail(values.email);
+        }
+      },
+    });
   };
 
   const serverError = registerMutation.isError
@@ -132,6 +139,54 @@ export default function RegisterPage() {
       "disabled:bg-gray-50 disabled:text-gray-500",
       hasError ? "border-red-400 bg-red-50" : "border-gray-300 bg-white"
     );
+
+  // "Check your email" screen — shown when confirmation is required
+  if (registeredEmail) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 w-full max-w-md text-center">
+          <Link href="/" className="text-2xl font-bold text-blue-600">
+            ICanRun
+          </Link>
+          <div className="mt-8 mb-4 flex justify-center">
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
+              <svg
+                className="w-8 h-8 text-blue-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+                />
+              </svg>
+            </div>
+          </div>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Проверьте вашу почту
+          </h1>
+          <p className="text-sm text-gray-500 mt-2 leading-relaxed">
+            Мы отправили письмо с подтверждением на{" "}
+            <span className="font-medium text-gray-700">{registeredEmail}</span>.
+            <br />
+            Перейдите по ссылке в письме, чтобы активировать аккаунт.
+          </p>
+          <p className="text-xs text-gray-400 mt-4">
+            Не получили письмо? Проверьте папку «Спам».
+          </p>
+          <Link
+            href="/login"
+            className="mt-6 inline-block text-sm text-blue-600 hover:text-blue-700 hover:underline"
+          >
+            Вернуться на страницу входа
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">

@@ -2,15 +2,21 @@
  * Login page.
  * Uses react-hook-form + Zod validation.
  * Delegates auth logic to useLogin hook (React Query + authStore).
+ *
+ * Special case: when the server returns X-Error-Code: EMAIL_NOT_CONFIRMED,
+ * we show a "resend confirmation" prompt.
  */
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { extractErrorMessage, useLogin } from "@/hooks/useAuth";
+import { authApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import type { AxiosError } from "axios";
 
 // ---------------------------------------------------------------------------
 // Validation schema
@@ -35,10 +41,13 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const loginMutation = useLogin();
+  const [resendEmail, setResendEmail] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "done">("idle");
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -46,7 +55,29 @@ export default function LoginPage() {
   });
 
   const onSubmit = (values: LoginFormValues) => {
-    loginMutation.mutate(values);
+    loginMutation.mutate(values, {
+      onError: (err: unknown) => {
+        // Detect unconfirmed email — offer resend option
+        const axiosErr = err as AxiosError<{ detail?: string }>;
+        const headers = axiosErr?.response?.headers as Record<string, string> | undefined;
+        const errorCode = headers?.["x-error-code"];
+        if (errorCode === "EMAIL_NOT_CONFIRMED" || axiosErr?.response?.status === 403) {
+          setResendEmail(values.email);
+        }
+      },
+    });
+  };
+
+  const handleResend = async () => {
+    if (!resendEmail) return;
+    setResendStatus("sending");
+    try {
+      await authApi.resendConfirmation(resendEmail);
+      setResendStatus("done");
+    } catch {
+      // Always show "done" to prevent email enumeration
+      setResendStatus("done");
+    }
   };
 
   const serverError = loginMutation.isError
@@ -135,6 +166,28 @@ export default function LoginPage() {
           {serverError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
               {serverError}
+
+              {/* Resend confirmation prompt */}
+              {resendEmail && (
+                <div className="mt-2 pt-2 border-t border-red-100">
+                  {resendStatus === "done" ? (
+                    <p className="text-xs text-green-700">
+                      Письмо отправлено. Проверьте папку «Спам».
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resendStatus === "sending"}
+                      className="text-xs text-blue-700 hover:underline disabled:opacity-50"
+                    >
+                      {resendStatus === "sending"
+                        ? "Отправляем..."
+                        : "Отправить письмо повторно"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

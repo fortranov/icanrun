@@ -2,16 +2,19 @@
 Authentication router.
 
 Endpoints:
-  POST /auth/register   — create a new account
-  POST /auth/login      — obtain access + refresh tokens
-  POST /auth/refresh    — rotate tokens using a valid refresh token
-  POST /auth/logout     — invalidate the refresh token
-  GET  /auth/me         — return the current authenticated user profile
+  POST /auth/register             — create a new account
+  POST /auth/login                — obtain access + refresh tokens
+  POST /auth/refresh              — rotate tokens using a valid refresh token
+  POST /auth/logout               — invalidate the refresh token
+  GET  /auth/me                   — return the current authenticated user profile
+  POST /auth/confirm-email        — activate account via confirmation token
+  POST /auth/resend-confirmation  — re-send confirmation email
 """
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Union
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -32,26 +35,51 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Register response — may be tokens OR "check your email" message
+# ---------------------------------------------------------------------------
+
+class RegisterResponse(BaseModel):
+    """
+    Response for POST /auth/register.
+
+    When email confirmation is disabled (default), access_token and
+    refresh_token are returned and the user is immediately logged in.
+
+    When email confirmation is enabled, both token fields are None and
+    requires_confirmation=True signals the client to show "check your inbox".
+    """
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    requires_confirmation: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Register
 # ---------------------------------------------------------------------------
 
 @router.post(
     "/register",
-    response_model=TokenResponse,
+    response_model=RegisterResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account",
 )
 async def register(
     data: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenResponse:
+) -> RegisterResponse:
     """
     Create a new user account and automatically assign a 30-day Trial subscription.
-    Returns access and refresh tokens so the user is immediately logged in.
+
+    If the email_confirmation_enabled app setting is true, a confirmation email
+    is sent and the response contains requires_confirmation=True with no tokens.
+    Otherwise returns access and refresh tokens so the user is immediately logged in.
     """
     service = AuthService(db)
     user, access_token, refresh_token = await service.register(data)
-    return TokenResponse(
+    if access_token is None:
+        return RegisterResponse(requires_confirmation=True)
+    return RegisterResponse(
         access_token=access_token,
         refresh_token=refresh_token,
     )
@@ -161,3 +189,56 @@ async def me(
         **UserResponse.model_validate(current_user).model_dump(),
         subscription=SubscriptionResponse.model_validate(subscription) if subscription else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Email confirmation
+# ---------------------------------------------------------------------------
+
+class ConfirmEmailResponse(BaseModel):
+    message: str = "Email confirmed successfully"
+
+
+class ResendConfirmationRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post(
+    "/confirm-email",
+    response_model=ConfirmEmailResponse,
+    summary="Confirm email address via token",
+)
+async def confirm_email(
+    token: Annotated[str, Query(description="JWT confirmation token from the email link")],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ConfirmEmailResponse:
+    """
+    Activate a user account by validating the JWT confirmation token.
+
+    The token is passed as a query parameter: POST /auth/confirm-email?token=xxx
+
+    On success the user's email_confirmed flag is set to True and the stored
+    token is cleared. The client should redirect to /login.
+    """
+    service = AuthService(db)
+    await service.confirm_email(token)
+    return ConfirmEmailResponse()
+
+
+@router.post(
+    "/resend-confirmation",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Re-send email confirmation link",
+)
+async def resend_confirmation(
+    data: ResendConfirmationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """
+    Request a new confirmation email.
+
+    Always returns 204 regardless of whether the email exists or is already
+    confirmed, to prevent email enumeration attacks.
+    """
+    service = AuthService(db)
+    await service.resend_confirmation(data.email)

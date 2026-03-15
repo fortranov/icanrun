@@ -8,6 +8,7 @@ from app.models.workout import Workout
 from app.models.competition import Competition
 from app.models.plan import TrainingPlan
 from app.models.skip import Skip
+from app.models.app_setting import AppSetting
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "Competition",
     "TrainingPlan",
     "Skip",
+    "AppSetting",
 ]

@@ -21,6 +21,9 @@ python-multipart==0.0.20
 # HTTP client (for Garmin, YooKassa)
 httpx==0.28.1
 
+# Async SMTP (email sending)
+aiosmtplib==3.0.2
+
 # Payments
 yookassa==3.5.0
 

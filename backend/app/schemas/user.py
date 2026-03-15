@@ -38,6 +38,7 @@ class UserResponse(UserBase):
     role: UserRole
     is_active: bool
     google_oauth_enabled: bool
+    email_confirmed: bool
     birth_year: Optional[int]
     gender: Optional[str]
     weight_kg: Optional[float]

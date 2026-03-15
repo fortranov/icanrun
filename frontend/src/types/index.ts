@@ -59,6 +59,7 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   google_oauth_enabled: boolean;
+  email_confirmed: boolean;
   birth_year: number | null;
   gender: GenderType | null;
   weight_kg: number | null;

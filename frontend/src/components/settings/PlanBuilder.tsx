@@ -421,7 +421,6 @@ export function PlanBuilder() {
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                inputMode="numeric"
                 placeholder="5:30"
                 value={longRunPace}
                 onChange={(e) => setLongRunPace(e.target.value)}

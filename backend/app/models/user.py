@@ -30,6 +30,13 @@ class User(Base):
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     height_cm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    # Email confirmation
+    email_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_confirmation_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    email_confirmation_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
