@@ -200,9 +200,9 @@ SESSION_MINUTES: Dict[str, Dict[str, int]] = {
 #   - Polarized model (Seiler): INTERVAL sessions are shorter but high TSS/min
 #   - CTS: LONG = 25–40% of weekly volume
 #
-# Within each sport's pool, per-session minutes = pool_minutes * (multiplier /
-# sum_of_multipliers_for_that_sport). A LONG session therefore receives ~1.5×
-# the time of a THRESHOLD session, and ~3× the time of a RECOVERY session.
+# Per-session minutes = total_weekly_minutes * (multiplier / sum_of_all_multipliers).
+# A LONG session therefore receives ~1.5× the time of a THRESHOLD session,
+# and ~3× the time of a RECOVERY session, regardless of sport type.
 WORKOUT_TYPE_DURATION_MULTIPLIER: Dict[Optional[WorkoutType], float] = {
     WorkoutType.LONG:      1.5,   # Longest session; ~25–30% of weekly volume
     None:                  1.1,   # General aerobic: slightly above-average
@@ -569,53 +569,60 @@ class PlanGenerator:
         volume_split: Dict[str, int],
     ) -> List[int]:
         """
-        Distribute each sport's weekly minutes across its sessions proportionally
-        to the WORKOUT_TYPE_DURATION_MULTIPLIER for each session's workout type.
+        Distribute total weekly minutes across all sessions proportionally to
+        each session's WORKOUT_TYPE_DURATION_MULTIPLIER.
+
+        Uses global distribution across all sessions (not per-sport grouping)
+        so that workout type meaningfully affects duration even when a sport
+        has only one session per week — the common triathlon case where the
+        per-sport approach cancels the multiplier:
+          sport_total * mult / mult = sport_total  (all sessions equal).
 
         Algorithm:
-          1. Group session indices by sport.
+          1. Sum all volume_split values to get total weekly minutes.
           2. Look up the duration multiplier for each session's workout type.
-          3. Scale multipliers so that sessions of the same sport sum exactly to
-             that sport's allocated weekly minutes (volume_split[sport]).
+          3. Each session gets: total_minutes * (its_mult / sum_of_all_mults).
           4. Floor every result at 15 minutes.
+
+        Example (triathlon, 3 sessions, 300 min/week):
+          swim=RECOVERY(0.5), bike=LONG(1.5), run=THRESHOLD(1.0) → total=3.0
+          swim = 300 * 0.5/3.0 =  50 min
+          bike = 300 * 1.5/3.0 = 150 min
+          run  = 300 * 1.0/3.0 = 100 min
 
         Example (single-sport, 3 sessions, 300 min/week):
           LONG(1.5) + THRESHOLD(1.0) + RECOVERY(0.5) → total=3.0
-          LONG = 300 * 1.5/3.0 = 150 min (50%)
-          THRESHOLD = 300 * 1.0/3.0 = 100 min (33%)
-          RECOVERY = 300 * 0.5/3.0 =  50 min (17%)
+          LONG      = 300 * 1.5/3.0 = 150 min
+          THRESHOLD = 300 * 1.0/3.0 = 100 min
+          RECOVERY  = 300 * 0.5/3.0 =  50 min
         """
         session_count = len(session_sports)
-        durations = [0] * session_count
+        if session_count == 0:
+            return []
 
-        # Group session indices by sport
-        sport_indices: Dict[str, List[int]] = {}
-        for i, (sport_str, _) in enumerate(session_sports):
-            sport_indices.setdefault(sport_str, []).append(i)
+        total_minutes = sum(volume_split.values())
 
-        for sport_str, indices in sport_indices.items():
-            sport_total = volume_split.get(sport_str, 0)
-            if sport_total == 0:
-                for i in indices:
-                    durations[i] = 15
-                continue
+        multipliers = [
+            WORKOUT_TYPE_DURATION_MULTIPLIER.get(wtype, 1.0)
+            for wtype in session_workout_types
+        ]
+        total_mult = sum(multipliers)
 
-            multipliers = [
-                WORKOUT_TYPE_DURATION_MULTIPLIER.get(session_workout_types[i], 1.0)
-                for i in indices
-            ]
-            total_mult = sum(multipliers)
+        if total_mult == 0:
+            per_session = max(15, total_minutes // session_count)
+            return [per_session] * session_count
 
-            if total_mult == 0:
-                per_session = max(15, sport_total // len(indices))
-                for i in indices:
-                    durations[i] = per_session
-            else:
-                for idx, i in enumerate(indices):
-                    durations[i] = max(
-                        15,
-                        round(sport_total * multipliers[idx] / total_mult),
-                    )
+        durations = [
+            max(15, round(total_minutes * mult / total_mult))
+            for mult in multipliers
+        ]
+
+        # Correct rounding drift so total_minutes is preserved exactly
+        diff = total_minutes - sum(durations)
+        if diff != 0:
+            # Apply the correction to the longest session (least noticeable)
+            longest = max(range(session_count), key=lambda i: durations[i])
+            durations[longest] = max(15, durations[longest] + diff)
 
         return durations
 
