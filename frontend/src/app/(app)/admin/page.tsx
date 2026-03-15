@@ -7,7 +7,7 @@
  *   1. User Management — list all users, change role/subscription
  *   2. App Settings — Google OAuth toggle + full email/SMTP settings
  */
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -320,28 +320,28 @@ function AppSettingsBlock() {
       const res = await adminApi.settings();
       return res.data as AppSettings;
     },
-    // Sync loaded data into form state on first load
-    select: (data) => {
-      setForm((prev) =>
-        Object.keys(prev).length === 0
-          ? {
-              google_oauth_enabled: data.google_oauth_enabled,
-              google_client_id: data.google_client_id,
-              google_client_secret: "",
-              email_confirmation_enabled: data.email_confirmation_enabled,
-              smtp_host: data.smtp_host,
-              smtp_port: data.smtp_port,
-              smtp_user: data.smtp_user,
-              smtp_password: "",
-              smtp_from_email: data.smtp_from_email,
-              smtp_from_name: data.smtp_from_name,
-              confirmation_token_hours: data.confirmation_token_hours,
-            }
-          : prev
-      );
-      return data;
-    },
   });
+
+  // Initialise form once when settings are first loaded
+  const formInitialized = useRef(false);
+  useEffect(() => {
+    if (settings && !formInitialized.current) {
+      formInitialized.current = true;
+      setForm({
+        google_oauth_enabled: settings.google_oauth_enabled,
+        google_client_id: settings.google_client_id,
+        google_client_secret: "",
+        email_confirmation_enabled: settings.email_confirmation_enabled,
+        smtp_host: settings.smtp_host,
+        smtp_port: settings.smtp_port,
+        smtp_user: settings.smtp_user,
+        smtp_password: "",
+        smtp_from_email: settings.smtp_from_email,
+        smtp_from_name: settings.smtp_from_name,
+        confirmation_token_hours: settings.confirmation_token_hours,
+      });
+    }
+  }, [settings]);
 
   const { mutateAsync: saveSettings, isPending: isSaving } = useMutation({
     mutationFn: async (data: object) => {
