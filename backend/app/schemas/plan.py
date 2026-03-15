@@ -44,6 +44,15 @@ class PlanSettings(BaseModel):
     swim_priority: float = Field(default=1.0, ge=0.0, le=3.0)
     bike_priority: float = Field(default=1.0, ge=0.0, le=3.0)
     run_priority: float = Field(default=1.0, ge=0.0, le=3.0)
+    # Current baseline pace / speed — used for future intensity zone calibration
+    long_run_pace: Optional[float] = Field(default=None, ge=1.0, le=30.0,
+        description="Long run pace in min/km (e.g. 5.5 = 5:30/km)")
+    swim_pace_min: Optional[int] = Field(default=None, ge=0, le=10,
+        description="Swim pace minutes part per 100m")
+    swim_pace_sec: Optional[int] = Field(default=None, ge=0, le=59,
+        description="Swim pace seconds part per 100m")
+    long_ride_speed: Optional[float] = Field(default=None, ge=5.0, le=60.0,
+        description="Long ride average speed in km/h")
 
 
 class WeeklyVolumeBreakdown(BaseModel):

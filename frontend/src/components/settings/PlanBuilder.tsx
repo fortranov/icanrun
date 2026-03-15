@@ -62,6 +62,10 @@ export function PlanBuilder() {
   const [athleteLevel, setAthleteLevel] = useState<AthleteLevel>("intermediate");
   const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(4);
   const [distanceType, setDistanceType] = useState<TriathlonDistance>("olympic");
+  const [longRunPace, setLongRunPace] = useState<string>("");
+  const [swimPaceMin, setSwimPaceMin] = useState<string>("");
+  const [swimPaceSec, setSwimPaceSec] = useState<string>("");
+  const [longRideSpeed, setLongRideSpeed] = useState<string>("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -101,6 +105,10 @@ export function PlanBuilder() {
           athlete_level: athleteLevel,
           sessions_per_week: sessionsPerWeek,
           distance_type: sport === "triathlon" ? distanceType : null,
+          long_run_pace: sport === "running" && longRunPace !== "" ? Number(longRunPace) : null,
+          swim_pace_min: sport === "swimming" && swimPaceMin !== "" ? Number(swimPaceMin) : null,
+          swim_pace_sec: sport === "swimming" && swimPaceSec !== "" ? Number(swimPaceSec) : null,
+          long_ride_speed: sport === "cycling" && longRideSpeed !== "" ? Number(longRideSpeed) : null,
         },
       };
       const result = await generatePlan(req);
@@ -326,6 +334,92 @@ export function PlanBuilder() {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Running: long run pace */}
+        {sport === "running" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Темп длительной тренировки (сейчас)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={3}
+                max={20}
+                step={0.1}
+                placeholder="5.5"
+                value={longRunPace}
+                onChange={(e) => setLongRunPace(e.target.value)}
+                className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <span className="text-sm text-gray-500">мин/км</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Например, 5.5 = 5:30/км. Используется для калибровки зон интенсивности.
+            </p>
+          </div>
+        )}
+
+        {/* Swimming: pace per 100m */}
+        {sport === "swimming" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Темп на 100м (сейчас)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                placeholder="2"
+                value={swimPaceMin}
+                onChange={(e) => setSwimPaceMin(e.target.value)}
+                className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <span className="text-sm text-gray-500">мин</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                step={1}
+                placeholder="00"
+                value={swimPaceSec}
+                onChange={(e) => setSwimPaceSec(e.target.value)}
+                className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <span className="text-sm text-gray-500">сек</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Темп длительного заплыва на 100м. Используется для калибровки зон интенсивности.
+            </p>
+          </div>
+        )}
+
+        {/* Cycling: long ride speed */}
+        {sport === "cycling" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Скорость длительной тренировки (сейчас)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={10}
+                max={60}
+                step={0.5}
+                placeholder="28"
+                value={longRideSpeed}
+                onChange={(e) => setLongRideSpeed(e.target.value)}
+                className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <span className="text-sm text-gray-500">км/ч</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Средняя скорость на длинной поездке. Используется для калибровки зон интенсивности.
+            </p>
           </div>
         )}
 

@@ -206,6 +206,10 @@ export interface PlanSettings {
   swim_priority?: number;
   bike_priority?: number;
   run_priority?: number;
+  long_run_pace?: number | null;
+  swim_pace_min?: number | null;
+  swim_pace_sec?: number | null;
+  long_ride_speed?: number | null;
 }
 
 export interface PlanGenerateRequest {
