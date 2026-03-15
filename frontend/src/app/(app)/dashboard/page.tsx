@@ -23,13 +23,36 @@ import { AddCompetitionModal } from "@/components/modals/AddCompetitionModal";
 import { MobileRotatePrompt } from "@/components/layout/MobileRotatePrompt";
 import type { Competition, Workout } from "@/types";
 
+/** Return the first and last ISO date strings visible in the calendar grid. */
+function getCalendarDateRange(year: number, month: number): { dateFrom: string; dateTo: string } {
+  // First day of month → find Monday of that week
+  const firstOfMonth = new Date(year, month - 1, 1);
+  let startDow = firstOfMonth.getDay(); // 0=Sun
+  startDow = startDow === 0 ? 6 : startDow - 1; // Mon=0
+  const gridStart = new Date(year, month - 1, 1 - startDow);
+
+  // Last day of month → find Sunday of that week
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const lastOfMonth = new Date(year, month - 1, daysInMonth);
+  let endDow = lastOfMonth.getDay();
+  endDow = endDow === 0 ? 6 : endDow - 1;
+  const daysToEnd = endDow === 6 ? 0 : 6 - endDow;
+  const gridEnd = new Date(year, month - 1, daysInMonth + daysToEnd);
+
+  return {
+    dateFrom: gridStart.toISOString().split("T")[0],
+    dateTo: gridEnd.toISOString().split("T")[0],
+  };
+}
+
 export default function DashboardPage() {
   const { currentYear, currentMonth } = useCalendarStore();
 
   // ---- Data fetching ----
+  const { dateFrom, dateTo } = getCalendarDateRange(currentYear, currentMonth);
   const { data: workoutsData, isLoading: workoutsLoading } = useWorkouts({
-    year: currentYear,
-    month: currentMonth,
+    date_from: dateFrom,
+    date_to: dateTo,
   });
 
   const { data: competitionsData, isLoading: competitionsLoading } =
