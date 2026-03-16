@@ -64,28 +64,44 @@ const ROLE_COLORS: Record<string, string> = {
 // User Management Component
 // ---------------------------------------------------------------------------
 
+interface PaginatedUsers {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
 function UserManagement() {
   const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 50;
+
   const [editUserId, setEditUserId] = useState<number | null>(null);
   const [editRole, setEditRole] = useState<UserRole>("user");
   const [editPlan, setEditPlan] = useState<SubscriptionPlan | "">("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  const { data: users, isLoading } = useQuery<AdminUser[]>({
-    queryKey: ["admin", "users"],
+  const { data, isLoading } = useQuery<PaginatedUsers>({
+    queryKey: ["admin", "users", page],
     queryFn: async () => {
-      const res = await adminApi.users();
-      return res.data as AdminUser[];
+      const res = await adminApi.users(page, PER_PAGE);
+      return res.data as PaginatedUsers;
     },
   });
 
+  const users = data?.items ?? [];
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+
   const { mutateAsync: updateUser, isPending: isUpdating } = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: object }) => {
-      const res = await adminApi.updateUser(id, data);
+    mutationFn: async ({ id, payload }: { id: number; payload: object }) => {
+      const res = await adminApi.updateUser(id, payload);
       return res.data as AdminUser;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      invalidate();
       setEditUserId(null);
       setActionError(null);
     },
@@ -94,6 +110,22 @@ function UserManagement() {
         (err as { response?: { data?: { detail?: string } } })?.response?.data
           ?.detail ?? "Ошибка при обновлении пользователя";
       setActionError(msg);
+    },
+  });
+
+  const { mutateAsync: deleteUser, isPending: isDeleting } = useMutation({
+    mutationFn: async (id: number) => adminApi.deleteUser(id),
+    onSuccess: () => {
+      invalidate();
+      setDeleteConfirmId(null);
+      setActionError(null);
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Ошибка при удалении пользователя";
+      setActionError(msg);
+      setDeleteConfirmId(null);
     },
   });
 
@@ -107,7 +139,11 @@ function UserManagement() {
   const handleSave = async (userId: number) => {
     const payload: Record<string, unknown> = { role: editRole };
     if (editPlan) payload.subscription_plan = editPlan;
-    await updateUser({ id: userId, data: payload });
+    await updateUser({ id: userId, payload });
+  };
+
+  const handleToggleBlock = async (user: AdminUser) => {
+    await updateUser({ id: user.id, payload: { is_active: !user.is_active } });
   };
 
   if (isLoading) {
@@ -123,17 +159,39 @@ function UserManagement() {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-900">
-          Пользователи
-        </h2>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Всего: {users?.length ?? 0}
-        </p>
+        <h2 className="text-lg font-semibold text-gray-900">Пользователи</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Всего: {data?.total ?? 0}</p>
       </div>
 
       {actionError && (
         <div className="mx-6 mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           {actionError}
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirmId !== null && (
+        <div className="mx-6 mt-4 rounded-lg bg-orange-50 border border-orange-200 px-4 py-3 flex items-center justify-between gap-4">
+          <p className="text-sm text-orange-800">
+            Удалить пользователя? Это действие необратимо — все данные будут удалены.
+          </p>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => deleteUser(deleteConfirmId)}
+              disabled={isDeleting}
+              className="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {isDeleting ? "..." : "Удалить"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmId(null)}
+              className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded hover:bg-gray-100 transition-colors"
+            >
+              Отмена
+            </button>
+          </div>
         </div>
       )}
 
@@ -145,15 +203,27 @@ function UserManagement() {
               <th className="text-left px-6 py-3 font-medium">Роль</th>
               <th className="text-left px-6 py-3 font-medium">Подписка</th>
               <th className="text-left px-6 py-3 font-medium">Зарегистрирован</th>
+              <th className="text-left px-6 py-3 font-medium">Последний вход</th>
               <th className="text-right px-6 py-3 font-medium">Действия</th>
             </tr>
           </thead>
           <tbody>
-            {(users ?? []).map((user) => (
-              <tr key={user.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+            {users.map((user) => (
+              <tr
+                key={user.id}
+                className={cn(
+                  "border-b border-gray-50 hover:bg-gray-50/50",
+                  !user.is_active && "bg-red-50/30"
+                )}
+              >
                 <td className="px-6 py-3">
                   <div>
-                    <p className="font-medium text-gray-900">{user.name}</p>
+                    <p className={cn("font-medium", user.is_active ? "text-gray-900" : "text-gray-400")}>
+                      {user.name}
+                      {!user.is_active && (
+                        <span className="ml-2 text-xs text-red-500 font-normal">заблокирован</span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-400">{user.email}</p>
                   </div>
                 </td>
@@ -200,6 +270,12 @@ function UserManagement() {
                   {formatDate(user.created_at.split("T")[0])}
                 </td>
 
+                <td className="px-6 py-3 text-gray-500 text-xs">
+                  {user.last_login_at
+                    ? formatDate(user.last_login_at.split("T")[0])
+                    : <span className="text-gray-300">—</span>}
+                </td>
+
                 <td className="px-6 py-3 text-right">
                   {editUserId === user.id ? (
                     <div className="flex gap-2 justify-end">
@@ -220,13 +296,35 @@ function UserManagement() {
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => startEdit(user)}
-                      className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded hover:bg-gray-100 transition-colors"
-                    >
-                      Изменить
-                    </button>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(user)}
+                        className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded hover:bg-gray-100 transition-colors"
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBlock(user)}
+                        disabled={isUpdating}
+                        className={cn(
+                          "px-3 py-1 text-xs rounded transition-colors disabled:opacity-50",
+                          user.is_active
+                            ? "border border-orange-200 text-orange-600 hover:bg-orange-50"
+                            : "border border-green-200 text-green-600 hover:bg-green-50"
+                        )}
+                      >
+                        {user.is_active ? "Блок" : "Разблок"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmId(user.id)}
+                        className="px-3 py-1 border border-red-200 text-red-600 text-xs rounded hover:bg-red-50 transition-colors"
+                      >
+                        Удалить
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -234,6 +332,33 @@ function UserManagement() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {(data?.pages ?? 1) > 1 && (
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+          <p className="text-xs text-gray-500">
+            Страница {data?.page} из {data?.pages} ({data?.total} пользователей)
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >
+              Назад
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(data?.pages ?? 1, p + 1))}
+              disabled={page === (data?.pages ?? 1)}
+              className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            >
+              Вперёд
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

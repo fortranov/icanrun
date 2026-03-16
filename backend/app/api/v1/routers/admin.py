@@ -14,9 +14,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.dependencies import CurrentAdmin, DatabaseSession
 from app.models.subscription import Subscription
@@ -37,6 +37,14 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class AdminUserResponse(UserResponse):
     """User response including active subscription for the admin view."""
     subscription: Optional[SubscriptionResponse] = None
+
+
+class PaginatedUsersResponse(BaseModel):
+    items: List[AdminUserResponse]
+    total: int
+    page: int
+    per_page: int
+    pages: int
 
 
 class AdminUserUpdate(BaseModel):
@@ -141,25 +149,32 @@ async def _build_settings_response(db) -> AppSettingsResponse:
 
 @router.get(
     "/users",
-    response_model=List[AdminUserResponse],
-    summary="List all users (admin only)",
+    response_model=PaginatedUsersResponse,
+    summary="List all users with pagination (admin only)",
 )
 async def list_users(
     current_admin: CurrentAdmin,
     db: DatabaseSession,
-) -> List[AdminUserResponse]:
-    """Return all registered users with their active subscription info."""
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+) -> PaginatedUsersResponse:
+    """Return paginated list of users with their active subscription info."""
+    total_result = await db.execute(select(func.count()).select_from(User))
+    total = total_result.scalar_one()
+
+    offset = (page - 1) * per_page
     result = await db.execute(
-        select(User).order_by(User.created_at.desc())
+        select(User).order_by(User.created_at.desc()).offset(offset).limit(per_page)
     )
     users = list(result.scalars().all())
 
-    responses = []
+    items = []
     for user in users:
-        responses.append(await _get_user_with_subscription(db, user))
+        items.append(await _get_user_with_subscription(db, user))
 
-    logger.info(f"Admin {current_admin.id} listed {len(users)} users")
-    return responses
+    pages = (total + per_page - 1) // per_page
+    logger.info(f"Admin {current_admin.id} listed users page={page} per_page={per_page} total={total}")
+    return PaginatedUsersResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
 
 
 @router.patch(
@@ -227,6 +242,40 @@ async def update_user(
         f"role={data.role} active={data.is_active} plan={data.subscription_plan}"
     )
     return await _get_user_with_subscription(db, user)
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a user (admin only)",
+)
+async def delete_user(
+    user_id: int,
+    current_admin: CurrentAdmin,
+    db: DatabaseSession,
+) -> None:
+    """
+    Permanently delete a user and all their data.
+
+    Admins cannot delete their own account.
+    """
+    if user_id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admins cannot delete their own account",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    await db.delete(user)
+    await db.flush()
+    logger.info(f"Admin {current_admin.id} deleted user {user_id}")
 
 
 # ---------------------------------------------------------------------------

@@ -254,8 +254,8 @@ class AuthService:
 
         if not user.is_active:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Account is disabled",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ваш аккаунт заблокирован. Для восстановления доступа напишите на info@icanrun.ru",
                 headers={"X-Error-Code": "ACCOUNT_DISABLED"},
             )
 
@@ -266,6 +266,8 @@ class AuthService:
                 detail="Email not confirmed. Please check your inbox.",
                 headers={"X-Error-Code": "EMAIL_NOT_CONFIRMED"},
             )
+
+        user.last_login_at = datetime.now(timezone.utc)
 
         access_token = create_access_token(user.id)
         refresh_token, _ = _create_refresh_token_with_jti(user.id)

@@ -43,6 +43,7 @@ class UserResponse(UserBase):
     gender: Optional[str]
     weight_kg: Optional[float]
     height_cm: Optional[float]
+    last_login_at: Optional[datetime]
     created_at: datetime
 
     model_config = {"from_attributes": True}

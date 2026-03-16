@@ -64,6 +64,7 @@ export interface User {
   gender: GenderType | null;
   weight_kg: number | null;
   height_cm: number | null;
+  last_login_at: string | null;
   created_at: string;
 }
 

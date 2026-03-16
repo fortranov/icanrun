@@ -237,10 +237,13 @@ export const garminApi = {
 };
 
 export const adminApi = {
-  users: () => apiClient.get("/admin/users"),
+  users: (page = 1, perPage = 50) =>
+    apiClient.get("/admin/users", { params: { page, per_page: perPage } }),
 
   updateUser: (id: number, data: object) =>
     apiClient.patch(`/admin/users/${id}`, data),
+
+  deleteUser: (id: number) => apiClient.delete(`/admin/users/${id}`),
 
   settings: () => apiClient.get("/admin/settings"),
 
