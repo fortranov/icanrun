@@ -12,6 +12,7 @@ services:
     environment:
       - APP_ENV=production
       - DATABASE_URL=sqlite+aiosqlite:///./data/icanrun.db
+      - CORS_ORIGINS=["https://icanrun.ru","https://www.icanrun.ru","http://localhost:3000"]
     volumes:
       - icanrun_db_data:/app/data
       - ./backend/.env:/app/.env:ro
