@@ -18,6 +18,11 @@ export const metadata: Metadata = {
     shortcut: "/icon.svg",
     apple: "/icon.svg",
   },
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+  },
 };
 
 export default function RootLayout({
