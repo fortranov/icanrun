@@ -13,7 +13,7 @@ services:
       - APP_ENV=production
       - DATABASE_URL=sqlite+aiosqlite:///./data/icanrun.db
     volumes:
-      - ./backend/data:/app/data
+      - icanrun_db_data:/app/data
       - ./backend/.env:/app/.env:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -40,3 +40,6 @@ services:
 # For production with high concurrency, consider migrating to PostgreSQL.
 # To add PostgreSQL, uncomment and configure a postgres service below,
 # update DATABASE_URL to postgresql+asyncpg://...
+
+volumes:
+  icanrun_db_data:
