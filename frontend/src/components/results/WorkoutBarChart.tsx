@@ -11,6 +11,7 @@
  */
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -138,6 +139,17 @@ export function WorkoutBarChart({
   completedColor = "#3b82f6",
   plannedColor = "#bfdbfe",
 }: WorkoutBarChartProps) {
+  // Hide X-axis week labels on portrait mobile (too narrow to fit)
+  const [hideXLabels, setHideXLabels] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      setHideXLabels(window.innerWidth < 768 && window.innerHeight > window.innerWidth);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   const weeks = aggregateToWeeks(days);
 
   const maxMinutes = Math.max(...weeks.map((w) => w.completed + w.planned), 60);
@@ -159,7 +171,7 @@ export function WorkoutBarChart({
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fontSize: 11, fill: "#94a3b8" }}
+          tick={hideXLabels ? false : { fontSize: 11, fill: "#94a3b8" }}
           tickLine={false}
           axisLine={false}
           interval={0}
