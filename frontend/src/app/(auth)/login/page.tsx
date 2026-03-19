@@ -10,11 +10,12 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { extractErrorMessage, useLogin } from "@/hooks/useAuth";
 import { authApi } from "@/lib/api";
+import { GoogleButton } from "@/components/auth/GoogleButton";
 import { cn } from "@/lib/utils";
 import type { AxiosError } from "axios";
 
@@ -43,6 +44,22 @@ export default function LoginPage() {
   const loginMutation = useLogin();
   const [resendEmail, setResendEmail] = useState<string | null>(null);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "done">("idle");
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    authApi.getAuthSettings().then((s) => setGoogleEnabled(s.google_oauth_enabled)).catch(() => {});
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      setGoogleLoading(true);
+      const { auth_url } = await authApi.getGoogleAuthUrl();
+      window.location.href = auth_url;
+    } catch {
+      setGoogleLoading(false);
+    }
+  };
 
   const {
     register,
@@ -205,6 +222,18 @@ export default function LoginPage() {
             {isPending ? "Входим..." : "Войти"}
           </button>
         </form>
+
+        {/* Google OAuth */}
+        {googleEnabled && (
+          <div className="mt-4">
+            <div className="relative flex items-center my-4">
+              <div className="flex-grow border-t border-gray-200" />
+              <span className="mx-3 text-xs text-gray-400 shrink-0">или</span>
+              <div className="flex-grow border-t border-gray-200" />
+            </div>
+            <GoogleButton onClick={handleGoogleLogin} loading={googleLoading} />
+          </div>
+        )}
 
         {/* Footer */}
         <p className="mt-6 text-center text-sm text-gray-600">

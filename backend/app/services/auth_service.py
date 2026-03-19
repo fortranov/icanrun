@@ -19,8 +19,10 @@ Email confirmation flow:
   - Users with unconfirmed email are blocked from login (EMAIL_NOT_CONFIRMED 403).
 """
 import logging
+import secrets
 import time
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
@@ -117,6 +119,57 @@ def _create_email_confirm_token(user_id: int, expires_hours: int) -> str:
         "jti": str(uuid.uuid4()),
     }
     return _jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class GoogleCallbackResult:
+    """
+    Discriminated-union result of google_login().
+
+    When requires_terms_acceptance=False: access_token + refresh_token are set.
+    When requires_terms_acceptance=True: pending_token + name + email are set.
+    """
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    requires_terms_acceptance: bool = False
+    pending_token: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+def _create_google_pending_token(google_id: str, email: str, name: str) -> str:
+    """
+    Create a short-lived JWT (10 minutes) for the Google sign-up pending state.
+
+    Type is "google_pending" so it cannot be misused as an access/refresh token.
+    The token carries the google_id in sub, plus email and name claims.
+    """
+    from jose import jwt as _jwt
+
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
+    payload = {
+        "sub": google_id,
+        "email": email,
+        "name": name,
+        "exp": expire,
+        "type": "google_pending",
+        "jti": str(uuid.uuid4()),
+    }
+    from app.core.config import settings
+    return _jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def _generate_random_password() -> str:
+    """
+    Generate a cryptographically random password for Google-only accounts.
+    The user will never need this (they log in via Google), but the DB column
+    requires a non-empty hashed value.
+    """
+    return secrets.token_urlsafe(32)
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +504,227 @@ class AuthService:
 
         await self._send_confirmation_email(user, confirm_token, svc, token_hours)
         logger.info(f"Confirmation email resent to {user.email}")
+
+    # ------------------------------------------------------------------
+    # Google OAuth
+    # ------------------------------------------------------------------
+
+    async def google_login(
+        self, code: str, redirect_uri: str
+    ) -> "GoogleCallbackResult":
+        """
+        Exchange Google OAuth code for user info and determine the login flow.
+
+        Returns a GoogleCallbackResult with one of three outcomes:
+        1. Existing Google user (google_id match): return tokens directly.
+        2. Existing email user: link google_id, return tokens.
+        3. Brand-new user: return a short-lived pending_token so the frontend
+           can show the terms-acceptance screen before creating the account.
+
+        Raises:
+            HTTPException 400 if Google OAuth is disabled.
+            HTTPException 400 if the Google token exchange fails.
+        """
+        import httpx
+        from app.core.config import settings as app_settings
+
+        if not app_settings.google_oauth_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Google OAuth is not enabled",
+                headers={"X-Error-Code": "GOOGLE_OAUTH_DISABLED"},
+            )
+
+        # --- Exchange authorization code for tokens ---
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": app_settings.google_client_id,
+                    "client_secret": app_settings.google_client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+
+        if token_resp.status_code != 200:
+            logger.error(f"Google token exchange failed: {token_resp.text}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to exchange Google authorization code",
+                headers={"X-Error-Code": "GOOGLE_TOKEN_EXCHANGE_FAILED"},
+            )
+
+        token_data = token_resp.json()
+        google_access_token = token_data.get("access_token")
+        if not google_access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No access token in Google response",
+                headers={"X-Error-Code": "GOOGLE_TOKEN_EXCHANGE_FAILED"},
+            )
+
+        # --- Fetch user info from Google ---
+        async with httpx.AsyncClient() as client:
+            userinfo_resp = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {google_access_token}"},
+            )
+
+        if userinfo_resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to fetch Google user info",
+                headers={"X-Error-Code": "GOOGLE_USERINFO_FAILED"},
+            )
+
+        userinfo = userinfo_resp.json()
+        google_id: str = userinfo.get("id") or userinfo.get("sub") or ""
+        email: str = (userinfo.get("email") or "").lower()
+        name: str = userinfo.get("name") or email.split("@")[0]
+
+        if not google_id or not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incomplete user info returned by Google",
+                headers={"X-Error-Code": "GOOGLE_INCOMPLETE_USERINFO"},
+            )
+
+        # --- Case 1: user already linked with this google_id ---
+        from sqlalchemy import select as sa_select
+        result = await self.db.execute(
+            sa_select(User).where(User.google_id == google_id)
+        )
+        user = result.scalar_one_or_none()
+        if user is not None:
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Ваш аккаунт заблокирован.",
+                    headers={"X-Error-Code": "ACCOUNT_DISABLED"},
+                )
+            user.last_login_at = datetime.now(timezone.utc)
+            await self.db.flush()
+            access_token = create_access_token(user.id)
+            refresh_token, _ = _create_refresh_token_with_jti(user.id)
+            logger.info(f"Google login (existing google_id): user id={user.id}")
+            return GoogleCallbackResult(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+
+        # --- Case 2: user exists with same email — link google_id ---
+        user = await self.user_repo.get_by_email(email)
+        if user is not None:
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Ваш аккаунт заблокирован.",
+                    headers={"X-Error-Code": "ACCOUNT_DISABLED"},
+                )
+            # Link the Google account and confirm email if not already
+            user.google_id = google_id
+            user.google_oauth_enabled = True
+            if not user.email_confirmed:
+                user.email_confirmed = True
+            user.last_login_at = datetime.now(timezone.utc)
+            await self.db.flush()
+            access_token = create_access_token(user.id)
+            refresh_token, _ = _create_refresh_token_with_jti(user.id)
+            logger.info(f"Google login (linked email account): user id={user.id}")
+            return GoogleCallbackResult(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+
+        # --- Case 3: brand-new user — require terms acceptance ---
+        pending_token = _create_google_pending_token(google_id, email, name)
+        logger.info(f"Google login (new user, pending terms): email={email}")
+        return GoogleCallbackResult(
+            requires_terms_acceptance=True,
+            pending_token=pending_token,
+            name=name,
+            email=email,
+        )
+
+    async def google_complete(self, pending_token: str) -> tuple[User, str, str]:
+        """
+        Complete Google sign-up after the user has accepted the terms.
+
+        Validates the pending_token JWT (type="google_pending"), creates a new
+        user with the google_id from the token, assigns a Trial subscription,
+        and returns tokens.
+
+        Raises:
+            HTTPException 400 for invalid/expired pending tokens.
+            HTTPException 400 if email is already registered (race condition).
+        """
+        invalid_exc = HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired Google sign-up session",
+            headers={"X-Error-Code": "INVALID_GOOGLE_PENDING_TOKEN"},
+        )
+
+        try:
+            payload = decode_token(pending_token)
+        except Exception:
+            raise invalid_exc
+
+        if payload.get("type") != "google_pending":
+            raise invalid_exc
+
+        google_id: str = payload.get("sub", "")
+        email: str = payload.get("email", "").lower()
+        name: str = payload.get("name", "")
+
+        if not google_id or not email:
+            raise invalid_exc
+
+        # Guard against race condition: email already taken
+        existing = await self.user_repo.get_by_email(email)
+        if existing is not None:
+            # If they already have a google_id link, just issue tokens
+            if existing.google_id == google_id:
+                access_token = create_access_token(existing.id)
+                refresh_token, _ = _create_refresh_token_with_jti(existing.id)
+                return existing, access_token, refresh_token
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+                headers={"X-Error-Code": "EMAIL_TAKEN"},
+            )
+
+        # Create the new user — email is considered confirmed (Google verified it)
+        user = User(
+            email=email,
+            hashed_password=hash_password(_generate_random_password()),
+            name=name,
+            role=UserRole.USER,
+            is_active=True,
+            email_confirmed=True,
+            google_id=google_id,
+            google_oauth_enabled=True,
+        )
+        self.db.add(user)
+        await self.db.flush()
+
+        trial_subscription = Subscription(
+            user_id=user.id,
+            plan=SubscriptionPlan.TRIAL,
+            is_active=True,
+            started_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+        self.db.add(trial_subscription)
+        user.last_login_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+        access_token = create_access_token(user.id)
+        refresh_token, _ = _create_refresh_token_with_jti(user.id)
+
+        logger.info(f"Google sign-up complete: {email} (id={user.id})")
+        return user, access_token, refresh_token
 
     # ------------------------------------------------------------------
     # Private helpers

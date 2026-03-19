@@ -132,6 +132,18 @@ apiClient.interceptors.response.use(
 
 // ---- API methods ----
 
+// ---- Response types for Google OAuth ----
+
+export interface GoogleCallbackResponse {
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type: string;
+  requires_terms_acceptance: boolean;
+  pending_token?: string | null;
+  name?: string | null;
+  email?: string | null;
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     apiClient.post("/auth/login", { email, password }),
@@ -157,6 +169,27 @@ export const authApi = {
 
   resendConfirmation: (email: string) =>
     apiClient.post("/auth/resend-confirmation", { email }),
+
+  // --- Public settings (no auth required) ---
+  getAuthSettings: (): Promise<{ google_oauth_enabled: boolean }> =>
+    apiClient.get<{ google_oauth_enabled: boolean }>("/auth/settings").then((r) => r.data),
+
+  // --- Google OAuth ---
+  getGoogleAuthUrl: (): Promise<{ auth_url: string }> =>
+    apiClient.get<{ auth_url: string }>("/auth/google").then((r) => r.data),
+
+  googleCallback: (code: string, redirect_uri: string): Promise<GoogleCallbackResponse> =>
+    apiClient
+      .post<GoogleCallbackResponse>("/auth/google/callback", { code, redirect_uri })
+      .then((r) => r.data),
+
+  googleComplete: (pending_token: string): Promise<{ access_token: string; refresh_token: string; token_type: string }> =>
+    apiClient
+      .post<{ access_token: string; refresh_token: string; token_type: string }>(
+        "/auth/google/complete",
+        { pending_token }
+      )
+      .then((r) => r.data),
 };
 
 export const workoutsApi = {

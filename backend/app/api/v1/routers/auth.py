@@ -9,6 +9,10 @@ Endpoints:
   GET  /auth/me                   — return the current authenticated user profile
   POST /auth/confirm-email        — activate account via confirmation token
   POST /auth/resend-confirmation  — re-send confirmation email
+  GET  /auth/settings             — public settings (google_oauth_enabled flag)
+  GET  /auth/google               — get Google OAuth redirect URL
+  POST /auth/google/callback      — exchange Google code for tokens or pending token
+  POST /auth/google/complete      — complete Google sign-up after terms acceptance
 """
 import logging
 from typing import Annotated, Optional, Union
@@ -22,6 +26,10 @@ from app.core.dependencies import get_current_user
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import (
     AccessTokenResponse,
+    AuthSettingsResponse,
+    GoogleCallbackRequest,
+    GoogleCallbackResponse,
+    GoogleCompleteRequest,
     LoginRequest,
     RefreshRequest,
     TokenResponse,
@@ -242,3 +250,128 @@ async def resend_confirmation(
     """
     service = AuthService(db)
     await service.resend_confirmation(data.email)
+
+
+# ---------------------------------------------------------------------------
+# Public auth settings
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/settings",
+    response_model=AuthSettingsResponse,
+    summary="Get public authentication settings",
+)
+async def get_auth_settings() -> AuthSettingsResponse:
+    """
+    Return public authentication settings that the frontend needs without
+    requiring authentication. Currently exposes the google_oauth_enabled flag
+    so the UI can decide whether to show the 'Sign in with Google' button.
+    """
+    from app.core.config import settings as app_settings
+
+    return AuthSettingsResponse(
+        google_oauth_enabled=app_settings.google_oauth_enabled,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth
+# ---------------------------------------------------------------------------
+
+class GoogleAuthUrlResponse(BaseModel):
+    auth_url: str
+
+
+@router.get(
+    "/google",
+    response_model=GoogleAuthUrlResponse,
+    summary="Get Google OAuth2 authorization URL",
+)
+async def get_google_auth_url() -> GoogleAuthUrlResponse:
+    """
+    Return the Google OAuth2 authorization URL that the frontend should redirect
+    the user to. Requires google_oauth_enabled to be true in settings.
+
+    The redirect_uri embedded in the URL is read from the GOOGLE_REDIRECT_URI
+    environment variable (defaults to http://localhost:3000/auth/google/callback).
+    """
+    from app.core.config import settings as app_settings
+
+    if not app_settings.google_oauth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google OAuth is not enabled",
+            headers={"X-Error-Code": "GOOGLE_OAUTH_DISABLED"},
+        )
+
+    import urllib.parse
+
+    params = {
+        "client_id": app_settings.google_client_id,
+        "redirect_uri": app_settings.google_redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return GoogleAuthUrlResponse(auth_url=auth_url)
+
+
+@router.post(
+    "/google/callback",
+    response_model=GoogleCallbackResponse,
+    summary="Handle Google OAuth2 callback — exchange code for tokens",
+)
+async def google_callback(
+    data: GoogleCallbackRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GoogleCallbackResponse:
+    """
+    Exchange the Google authorization code for user info.
+
+    Response cases:
+    - Existing user (matched by google_id or email): returns access + refresh tokens.
+    - New user: returns requires_terms_acceptance=True + pending_token (10-min JWT)
+      + name + email. The frontend should redirect to /auth/google/accept-terms.
+    """
+    service = AuthService(db)
+    result = await service.google_login(data.code, data.redirect_uri)
+
+    if result.requires_terms_acceptance:
+        return GoogleCallbackResponse(
+            requires_terms_acceptance=True,
+            pending_token=result.pending_token,
+            name=result.name,
+            email=result.email,
+        )
+
+    return GoogleCallbackResponse(
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+    )
+
+
+@router.post(
+    "/google/complete",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Complete Google sign-up after terms acceptance",
+)
+async def google_complete(
+    data: GoogleCompleteRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TokenResponse:
+    """
+    Finalize Google account creation. Called after the user accepts the
+    terms of service on the /auth/google/accept-terms page.
+
+    Validates the short-lived pending_token JWT, creates the user account
+    with a 30-day Trial subscription, and returns access + refresh tokens.
+    """
+    service = AuthService(db)
+    _, access_token, refresh_token = await service.google_complete(data.pending_token)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+    )

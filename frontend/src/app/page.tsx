@@ -243,7 +243,15 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 text-center text-slate-400">
           <p className="text-2xl font-black text-white mb-2">ICanRun</p>
           <p className="mb-3">Платформа для тренировок триатлетов</p>
-          <p className="text-sm">2026 ICanRun. Все права защищены.</p>
+          <p className="text-sm">
+            2026 ICanRun. Все права защищены.{" "}
+            <a
+              href="/user-agreement"
+              className="text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+            >
+              Пользовательское соглашение
+            </a>
+          </p>
         </div>
       </footer>
     </main>

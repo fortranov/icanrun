@@ -30,6 +30,9 @@ class User(Base):
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     height_cm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    # Google OAuth — stores the unique Google user ID ("sub" claim)
+    google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+
     # Email confirmation
     email_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_confirmation_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)

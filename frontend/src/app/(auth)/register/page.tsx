@@ -8,10 +8,12 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { extractErrorMessage, useRegister } from "@/hooks/useAuth";
+import { authApi } from "@/lib/api";
+import { GoogleButton } from "@/components/auth/GoogleButton";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,13 @@ const registerSchema = z
       .min(8, "Пароль не менее 8 символов")
       .max(128, "Пароль не более 128 символов"),
     password_confirm: z.string().min(1, "Подтвердите пароль"),
+
+    // Terms acceptance — required, must be true
+    terms_accepted: z.literal(true, {
+      errorMap: () => ({
+        message: "Необходимо принять пользовательское соглашение",
+      }),
+    }),
 
     // Optional athlete profile
     birth_year: z
@@ -96,6 +105,22 @@ export default function RegisterPage() {
   const registerMutation = useRegister();
   const [showProfile, setShowProfile] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    authApi.getAuthSettings().then((s) => setGoogleEnabled(s.google_oauth_enabled)).catch(() => {});
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      setGoogleLoading(true);
+      const { auth_url } = await authApi.getGoogleAuthUrl();
+      window.location.href = auth_url;
+    } catch {
+      setGoogleLoading(false);
+    }
+  };
 
   const {
     register,
@@ -113,7 +138,8 @@ export default function RegisterPage() {
   });
 
   const onSubmit = (values: RegisterFormValues) => {
-    const { password_confirm, ...payload } = values;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password_confirm, terms_accepted, ...payload } = values;
     registerMutation.mutate(payload, {
       onSuccess: ({ requiresConfirmation }) => {
         if (requiresConfirmation) {
@@ -346,6 +372,33 @@ export default function RegisterPage() {
             </div>
           )}
 
+          {/* Terms acceptance */}
+          <div className="space-y-1">
+            <div className="flex items-start gap-2">
+              <input
+                id="terms"
+                type="checkbox"
+                {...register("terms_accepted")}
+                disabled={isPending}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
+                Я принимаю{" "}
+                <Link
+                  href="/user-agreement"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  Пользовательское соглашение
+                </Link>
+              </label>
+            </div>
+            {errors.terms_accepted && (
+              <p className="text-xs text-red-600">{errors.terms_accepted.message}</p>
+            )}
+          </div>
+
           {/* Server error */}
           {serverError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -368,6 +421,18 @@ export default function RegisterPage() {
           </button>
         </form>
 
+        {/* Google OAuth divider + button */}
+        {googleEnabled && (
+          <div className="mt-4">
+            <div className="relative flex items-center my-4">
+              <div className="flex-grow border-t border-gray-200" />
+              <span className="mx-3 text-xs text-gray-400 shrink-0">или</span>
+              <div className="flex-grow border-t border-gray-200" />
+            </div>
+            <GoogleButton onClick={handleGoogleLogin} loading={googleLoading} />
+          </div>
+        )}
+
         {/* Footer */}
         <p className="mt-6 text-center text-sm text-gray-600">
           Уже есть аккаунт?{" "}
@@ -382,3 +447,5 @@ export default function RegisterPage() {
     </div>
   );
 }
+
+
