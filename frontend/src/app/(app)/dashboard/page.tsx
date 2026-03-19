@@ -13,9 +13,11 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useCalendarStore } from "@/stores/calendarStore";
 import { useWorkouts, useMoveWorkout, useToggleComplete } from "@/hooks/useWorkouts";
 import { useCompetitions } from "@/hooks/useCompetitions";
+import { usePlans } from "@/hooks/usePlans";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { WorkoutCard } from "@/components/calendar/WorkoutCard";
 import { CompetitionBadge } from "@/components/calendar/CompetitionBadge";
@@ -94,6 +96,9 @@ export default function DashboardPage() {
   const competitions = competitionsData?.items ?? [];
   const isLoading = workoutsLoading || competitionsLoading;
 
+  const { data: plans } = usePlans();
+  const hasNoPlan = plans !== undefined && plans.length === 0;
+
   // ---- Today's data for mobile portrait view ----
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
   const todayDate = useMemo(() => new Date(), []);
@@ -122,6 +127,14 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-4 gap-3">
           <h1 className="text-2xl font-bold text-gray-900">Тренировки</h1>
           <div className="flex items-center gap-2">
+            {hasNoPlan && (
+              <Link
+                href="/settings"
+                className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                + Создать план
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => setAddCompetitionOpen(true)}
@@ -156,6 +169,19 @@ export default function DashboardPage() {
       {/* ------------------------------------------------------------------ */}
       <div className="md:hidden landscape:hidden space-y-3">
         <h1 className="text-xl font-bold text-gray-900">Тренировки</h1>
+
+        {/* Add plan button — shown when no plan exists */}
+        {hasNoPlan && (
+          <Link
+            href="/settings"
+            className="w-full flex items-center justify-center gap-2 py-3 border border-blue-200 bg-blue-50 text-blue-600 rounded-xl font-medium text-sm hover:bg-blue-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Создать план тренировок
+          </Link>
+        )}
 
         {/* Primary add workout button */}
         <button
