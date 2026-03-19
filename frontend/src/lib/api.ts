@@ -282,5 +282,5 @@ export const adminApi = {
 
   updateSettings: (data: object) => apiClient.patch("/admin/settings", data),
 
-  testEmail: () => apiClient.post("/admin/settings/test-email"),
+  testEmail: (data: object) => apiClient.post("/admin/settings/test-email", data),
 };

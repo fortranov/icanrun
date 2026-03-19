@@ -510,7 +510,14 @@ function AppSettingsBlock() {
   const handleTestEmail = async () => {
     setTestEmailStatus("sending");
     try {
-      await adminApi.testEmail();
+      await adminApi.testEmail({
+        smtp_host: form.smtp_host ?? "",
+        smtp_port: form.smtp_port ?? 587,
+        smtp_user: form.smtp_user ?? "",
+        smtp_password: form.smtp_password ?? "",
+        smtp_from_email: form.smtp_from_email ?? "",
+        smtp_from_name: form.smtp_from_name ?? "ICanRun",
+      });
       setTestEmailStatus("ok");
       setTimeout(() => setTestEmailStatus("idle"), 4000);
     } catch (err: unknown) {

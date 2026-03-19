@@ -73,7 +73,6 @@ PERIOD_CONFIG: Dict[str, Tuple[str, str, int, int]] = {
 # ---------------------------------------------------------------------------
 # Workout type distribution per period
 # Each tuple: (WorkoutType | None, relative_weight)
-# None workout_type = general aerobic / no specific intensity label
 # ---------------------------------------------------------------------------
 
 _DIST_BASE1 = [
@@ -206,7 +205,7 @@ SESSION_MINUTES: Dict[str, Dict[str, int]] = {
 # and ~3× the time of a RECOVERY session, regardless of sport type.
 WORKOUT_TYPE_DURATION_MULTIPLIER: Dict[Optional[WorkoutType], float] = {
     WorkoutType.LONG:      1.5,   # Longest session; ~25–30% of weekly volume
-    WorkoutType.AEROBIC:   1.1,   # General aerobic base: slightly above-average
+    WorkoutType.AEROBIC:   1.2,   # General aerobic base: slightly above-average
     WorkoutType.THRESHOLD: 1.0,   # Medium: warm-up + LT work + cool-down
     WorkoutType.INTERVAL:  0.75,  # Shorter but most intense; high TSS/minute
     WorkoutType.RECOVERY:  0.5,   # Shortest & easiest; < 10% of weekly volume
@@ -611,12 +610,12 @@ class PlanGenerator:
         tuples, one per session.
 
         For single-sport: each session gets week_minutes / session_count.
-        For triathlon: swim gets 1 session, bike gets 2, run gets 2 (for
-        session_count=5). The split is proportional for other counts.
+        For triathlon: uses Friel's recommended base distribution — swim×1,
+        bike×2, run×2 (for 5 sessions/week), scaled proportionally for other
+        session counts. Remaining sessions go to bike and run first.
 
-        The list is ordered: swim sessions first (lighter on joints), then
-        bike, then run — matching the Friel recommendation of spreading
-        disciplines across the week.
+        The list is ordered: swim → bike → run, matching the Friel
+        recommendation of spreading disciplines across the week.
         """
         result: List[Tuple[str, int]] = []
         sports = list(volume_split.keys())
@@ -626,30 +625,37 @@ class PlanGenerator:
             per_session = max(15, volume_split[sport] // session_count)
             return [(sport, per_session)] * session_count
 
-        # Triathlon: allocate sessions proportionally
         total_minutes = sum(volume_split.values())
         if total_minutes == 0:
             return []
 
-        # Calculate sessions per sport proportionally
+        # Friel's base distribution: swim=1, bike=2, run=2 for a 5-session week
+        # Scale proportionally for other session counts
         sport_session_counts: Dict[str, int] = {}
         remaining_sessions = session_count
-        for i, (sp, mins) in enumerate(volume_split.items()):
-            if i < len(sports) - 1:
-                n = max(1, round(mins / total_minutes * session_count))
-                sport_session_counts[sp] = n
-                remaining_sessions -= n
-            else:
-                sport_session_counts[sp] = max(1, remaining_sessions)
 
-        # Order: swim → bike → run
-        order = [SportType.SWIMMING.value, SportType.CYCLING.value, SportType.RUNNING.value]
-        for sp in order:
-            if sp not in volume_split:
-                continue
+        default_counts = {
+            SportType.SWIMMING.value: 1,
+            SportType.CYCLING.value: 2,
+            SportType.RUNNING.value: 2,
+        }
+
+        scale = session_count / 5
+        for sp, cnt in default_counts.items():
+            sport_session_counts[sp] = max(1, round(cnt * scale))
+            remaining_sessions -= sport_session_counts[sp]
+
+        # Distribute any remaining sessions to bike and run first
+        for sp in [SportType.CYCLING.value, SportType.RUNNING.value]:
+            if remaining_sessions > 0:
+                sport_session_counts[sp] += 1
+                remaining_sessions -= 1
+
+        # Build result ordered swim → bike → run
+        for sp in [SportType.SWIMMING.value, SportType.CYCLING.value, SportType.RUNNING.value]:
             n = sport_session_counts.get(sp, 1)
-            total_sp_min = volume_split[sp]
-            per_session = max(15, total_sp_min // n)
+            total_sp_min = volume_split.get(sp, 0)
+            per_session = max(15, total_sp_min // n) if n > 0 else 0
             result.extend([(sp, per_session)] * n)
 
         return result[:session_count]
@@ -681,12 +687,6 @@ class PlanGenerator:
           swim = 300 * 0.5/3.0 =  50 min
           bike = 300 * 1.5/3.0 = 150 min
           run  = 300 * 1.0/3.0 = 100 min
-
-        Example (single-sport, 3 sessions, 300 min/week):
-          LONG(1.5) + THRESHOLD(1.0) + RECOVERY(0.5) → total=3.0
-          LONG      = 300 * 1.5/3.0 = 150 min
-          THRESHOLD = 300 * 1.0/3.0 = 100 min
-          RECOVERY  = 300 * 0.5/3.0 =  50 min
         """
         session_count = len(session_sports)
         if session_count == 0:

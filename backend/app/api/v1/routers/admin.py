@@ -371,46 +371,54 @@ async def update_settings(
 # Test email
 # ---------------------------------------------------------------------------
 
+class TestEmailRequest(BaseModel):
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str
+    smtp_from_name: str = "ICanRun"
+
+
 @router.post(
     "/settings/test-email",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Send a test email to verify SMTP settings (admin only)",
 )
 async def test_email(
+    data: TestEmailRequest,
     current_admin: CurrentAdmin,
     db: DatabaseSession,
 ) -> None:
     """
-    Send a test email to the admin's own address using the current SMTP settings.
-    Returns 204 on success. Raises 400 if SMTP settings are incomplete or sending fails.
+    Send a test email to the admin's own address using the provided SMTP settings.
+    Accepts settings directly in the request body so the admin can test before saving.
+    Returns 204 on success. Raises 400 if settings are incomplete or sending fails.
     """
     from app.services.email_service import send_test_email
     from app.services.settings_service import SettingsService
 
-    svc = SettingsService(db)
-
-    smtp_host = await svc.smtp_host()
-    smtp_port = await svc.smtp_port()
-    smtp_user = await svc.smtp_user()
-    smtp_password = await svc.smtp_password()
-    from_email = await svc.smtp_from_email()
-    from_name = await svc.smtp_from_name()
-
-    if not smtp_host or not from_email:
+    if not data.smtp_host or not data.smtp_from_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SMTP host and sender email must be configured before testing",
+            detail="SMTP host and sender email are required",
         )
+
+    # If password is blank, fall back to the saved password from DB
+    smtp_password = data.smtp_password
+    if not smtp_password:
+        svc = SettingsService(db)
+        smtp_password = await svc.smtp_password()
 
     try:
         await send_test_email(
             to_email=current_admin.email,
-            smtp_host=smtp_host,
-            smtp_port=smtp_port,
-            smtp_user=smtp_user,
+            smtp_host=data.smtp_host,
+            smtp_port=data.smtp_port,
+            smtp_user=data.smtp_user,
             smtp_password=smtp_password,
-            from_email=from_email,
-            from_name=from_name,
+            from_email=data.smtp_from_email,
+            from_name=data.smtp_from_name,
         )
     except Exception as exc:
         logger.error(f"Test email failed: {exc}")
