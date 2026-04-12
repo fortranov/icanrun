@@ -24,6 +24,17 @@ import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
+def _http_client(**kwargs) -> httpx.AsyncClient:
+    """
+    Return an httpx.AsyncClient configured with the optional Strava proxy.
+    Set STRAVA_PROXY_URL env var to route all Strava API traffic through a proxy.
+    Example: STRAVA_PROXY_URL=socks5://user:pass@host:1080
+    """
+    if settings.strava_proxy_url:
+        kwargs.setdefault("proxies", settings.strava_proxy_url)
+    return httpx.AsyncClient(**kwargs)
+
 from app.core.config import settings
 from app.models.user import User
 from app.models.workout import Workout
@@ -114,7 +125,7 @@ async def exchange_code(code: str) -> dict:
     Exchange an authorization code for tokens.
     Returns the full token response dict from Strava.
     """
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with _http_client(timeout=15.0) as client:
         resp = await client.post(
             _TOKEN_URL,
             data={
@@ -139,7 +150,7 @@ async def _refresh_token(user: User) -> str:
     Saves the new tokens to the user row and returns the new access token.
     NOTE: caller must commit the session after this call.
     """
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with _http_client(timeout=15.0) as client:
         resp = await client.post(
             _TOKEN_URL,
             data={
@@ -224,7 +235,7 @@ async def sync_activities(user: User, db: AsyncSession, days: int = 30) -> dict:
     skipped = 0
     page = 1
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with _http_client(timeout=30.0) as client:
         while True:
             resp = await client.get(
                 f"{_API_BASE}/athlete/activities",
@@ -273,7 +284,7 @@ async def fetch_and_save_activity(
     if existing:
         return None
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with _http_client(timeout=15.0) as client:
         resp = await client.get(
             f"{_API_BASE}/activities/{strava_activity_id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -327,7 +338,7 @@ async def disconnect_user(user: User, db: AsyncSession) -> None:
     """
     if user.strava_access_token:
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with _http_client(timeout=10.0) as client:
                 await client.post(
                     _DEAUTH_URL,
                     data={"access_token": user.strava_access_token},

@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     strava_client_secret: str = ""
     strava_redirect_uri: str = "http://localhost:3000/strava/callback"
     strava_webhook_verify_token: str = "icanrun-strava-webhook-token"
+    # Optional HTTP/SOCKS5 proxy for Strava API calls (needed on geo-blocked servers)
+    # Example: "socks5://user:pass@host:port" or "http://host:port"
+    strava_proxy_url: str = ""
 
     # Admin user (created on startup if not exists)
     admin_email: str = "abramov.yu.v@gmail.com"
