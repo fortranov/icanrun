@@ -1,6 +1,10 @@
 services:
   wg-socks:
     build: .
+    # hostname registers in Docker DNS so other containers on the same
+    # network can resolve it as "icanrun-wg-socks" — works even when
+    # Coolify overrides container_name with its own UUID-based value.
+    hostname: icanrun-wg-socks
     cap_add:
       - NET_ADMIN
     sysctls:
