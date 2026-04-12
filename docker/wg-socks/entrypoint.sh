@@ -2,10 +2,8 @@
 set -e
 
 echo "[wg-socks] Writing WireGuard config..."
-
 mkdir -p /etc/wireguard
 
-# All WG credentials come from environment variables — never stored in the image.
 cat > /etc/wireguard/wg0.conf << WGEOF
 [Interface]
 PrivateKey = ${WG_PRIVATE_KEY}
@@ -21,10 +19,8 @@ WGEOF
 
 chmod 600 /etc/wireguard/wg0.conf
 
-echo "[wg-socks] Bringing up WireGuard tunnel (wg0)..."
+echo "[wg-socks] Bringing up WireGuard tunnel..."
 wg-quick up wg0
 
-echo "[wg-socks] WireGuard tunnel up. Starting SOCKS5 proxy on :1080..."
-
-# microsocks: tiny SOCKS5 server, listens on all interfaces, no auth
-exec microsocks -p 1080 -i 0.0.0.0
+echo "[wg-socks] Tunnel active. Starting SOCKS5 proxy on :1080..."
+exec python3 /socks5proxy.py
