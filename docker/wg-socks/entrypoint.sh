@@ -1,5 +1,4 @@
 #!/bin/sh
-set -e
 
 echo "[wg-socks] Writing WireGuard config..."
 mkdir -p /etc/wireguard
@@ -20,7 +19,10 @@ WGEOF
 chmod 600 /etc/wireguard/wg0.conf
 
 echo "[wg-socks] Bringing up WireGuard tunnel..."
-wg-quick up wg0
+wg-quick up wg0 2>&1 || {
+    echo "[wg-socks] wg-quick failed. Sleeping to allow log reading..."
+    sleep 3600
+}
 
 echo "[wg-socks] Tunnel active. Starting SOCKS5 proxy on :1080..."
 exec python3 /socks5proxy.py
