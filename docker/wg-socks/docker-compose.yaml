@@ -1,0 +1,23 @@
+services:
+  wg-socks:
+    build: .
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.src_valid_mark: "1"
+    environment:
+      - WG_PRIVATE_KEY
+      - WG_ADDRESS
+      - WG_PEER_PUBLIC_KEY
+      - WG_PRESHARED_KEY
+      - WG_ENDPOINT
+    restart: unless-stopped
+    networks:
+      coolify:
+        aliases:
+          - icanrun-wg-socks
+
+networks:
+  coolify:
+    external: true
