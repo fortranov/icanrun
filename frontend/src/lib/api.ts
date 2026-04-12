@@ -8,8 +8,10 @@ import axios, {
   InternalAxiosRequestConfig,
 } from "axios";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use relative URLs so Next.js proxy (/api/* rewrite in next.config.mjs)
+// handles routing — avoids cross-origin requests from the browser entirely.
+// NEXT_PUBLIC_API_URL is still consumed by next.config.mjs for the destination.
+const API_BASE_URL = "";
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = "icanrun_access_token";
