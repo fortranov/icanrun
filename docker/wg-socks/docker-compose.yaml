@@ -16,6 +16,11 @@ services:
       - WG_PEER_PUBLIC_KEY
       - WG_PRESHARED_KEY
       - WG_ENDPOINT
+    # Bind ONLY to the Docker-internal coolify gateway (10.0.1.1).
+    # This makes the proxy reachable inside the coolify network as
+    # 10.0.1.1:1080 without exposing it on the public interface.
+    ports:
+      - "10.0.1.1:1080:1080"
     restart: unless-stopped
     networks:
       coolify:
