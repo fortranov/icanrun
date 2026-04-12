@@ -32,7 +32,7 @@ def _http_client(**kwargs) -> httpx.AsyncClient:
     Example: STRAVA_PROXY_URL=socks5://user:pass@host:1080
     """
     if settings.strava_proxy_url:
-        kwargs.setdefault("proxies", settings.strava_proxy_url)
+        kwargs.setdefault("proxy", settings.strava_proxy_url)
     return httpx.AsyncClient(**kwargs)
 
 from app.core.config import settings
