@@ -14,7 +14,7 @@ export type SportType =
 
 export type WorkoutType = "recovery" | "long" | "interval" | "threshold" | "aerobic";
 
-export type WorkoutSource = "planned" | "manual" | "garmin";
+export type WorkoutSource = "planned" | "manual" | "garmin" | "strava";
 
 export type CompetitionType =
   | "run_5k"
@@ -66,6 +66,8 @@ export interface User {
   height_cm: number | null;
   last_login_at: string | null;
   created_at: string;
+  strava_connected: boolean;
+  strava_athlete_name: string | null;
 }
 
 // ---- Subscription ----
@@ -93,6 +95,7 @@ export interface Workout {
   comment: string | null;
   plan_id: number | null;
   garmin_activity_id: string | null;
+  strava_activity_id: number | null;
   created_at: string;
 }
 

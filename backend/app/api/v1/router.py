@@ -9,6 +9,7 @@ from app.api.v1.routers.analytics import router as analytics_router
 from app.api.v1.routers.auth import router as auth_router
 from app.api.v1.routers.competitions import router as competitions_router
 from app.api.v1.routers.plans import router as plans_router
+from app.api.v1.routers.strava import router as strava_router
 from app.api.v1.routers.subscriptions import router as subscriptions_router
 from app.api.v1.routers.users import router as users_router
 from app.api.v1.routers.workouts import router as workouts_router
@@ -30,4 +31,5 @@ api_router.include_router(competitions_router)
 api_router.include_router(plans_router)
 api_router.include_router(analytics_router)
 api_router.include_router(subscriptions_router)
+api_router.include_router(strava_router)
 api_router.include_router(admin_router)

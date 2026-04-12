@@ -4,7 +4,7 @@ User ORM model.
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Enum as SAEnum
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -32,6 +32,15 @@ class User(Base):
 
     # Google OAuth — stores the unique Google user ID ("sub" claim)
     google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+
+    # Strava OAuth — tokens are persisted in DB (survive redeployments via mounted volume)
+    strava_athlete_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    strava_athlete_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    strava_access_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    strava_refresh_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    strava_token_expires_at: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    strava_connected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    strava_scope: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Email confirmation
     email_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

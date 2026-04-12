@@ -114,6 +114,13 @@ class WorkoutRepository(BaseRepository[Workout]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_strava_id(self, strava_activity_id: int) -> Optional[Workout]:
+        """Find a workout by Strava activity ID for deduplication."""
+        result = await self.db.execute(
+            select(Workout).where(Workout.strava_activity_id == strava_activity_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_plan(self, plan_id: int) -> List[Workout]:
         """Fetch all workouts belonging to a training plan."""
         result = await self.db.execute(

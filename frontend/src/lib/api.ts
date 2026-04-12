@@ -269,6 +269,22 @@ export const garminApi = {
   sync: () => apiClient.post("/garmin/sync"),
 };
 
+export const stravaApi = {
+  status: (): Promise<{ connected: boolean; athlete_id: number | null; athlete_name: string | null }> =>
+    apiClient.get("/strava/status").then((r) => r.data),
+
+  getAuthUrl: (): Promise<{ auth_url: string }> =>
+    apiClient.get("/strava/auth").then((r) => r.data),
+
+  callback: (code: string): Promise<{ athlete_id: number; athlete_name: string }> =>
+    apiClient.post("/strava/callback", { code }).then((r) => r.data),
+
+  sync: (days = 30): Promise<{ synced: number; skipped: number }> =>
+    apiClient.post(`/strava/sync?days=${days}`).then((r) => r.data),
+
+  disconnect: () => apiClient.post("/strava/disconnect"),
+};
+
 export const adminApi = {
   users: (page = 1, perPage = 50) =>
     apiClient.get("/admin/users", { params: { page, per_page: perPage } }),

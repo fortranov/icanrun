@@ -4,7 +4,7 @@ Workout ORM model.
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Enum as SAEnum
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -42,6 +42,11 @@ class Workout(Base):
     # layer (WorkoutRepository.get_by_garmin_id) enforces uniqueness before insert.
     garmin_activity_id: Mapped[Optional[str]] = mapped_column(
         String(100), nullable=True, index=True
+    )
+
+    # Strava activity deduplication (same reasoning as garmin_activity_id).
+    strava_activity_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, index=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

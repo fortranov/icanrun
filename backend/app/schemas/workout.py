@@ -61,6 +61,7 @@ class WorkoutResponse(BaseModel):
     comment: Optional[str]
     plan_id: Optional[int]
     garmin_activity_id: Optional[str]
+    strava_activity_id: Optional[int]
     created_at: dt.datetime
 
     model_config = {"from_attributes": True}

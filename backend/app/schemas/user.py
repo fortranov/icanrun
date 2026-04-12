@@ -45,6 +45,8 @@ class UserResponse(UserBase):
     height_cm: Optional[float]
     last_login_at: Optional[datetime]
     created_at: datetime
+    strava_connected: bool
+    strava_athlete_name: Optional[str]
 
     model_config = {"from_attributes": True}
 

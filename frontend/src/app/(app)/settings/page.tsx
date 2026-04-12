@@ -11,6 +11,8 @@
 import { SubscriptionBlock } from "@/components/settings/SubscriptionBlock";
 import { PlanBuilder } from "@/components/settings/PlanBuilder";
 import { GarminConnect } from "@/components/settings/GarminConnect";
+import { StravaConnect } from "@/components/settings/StravaConnect";
+import { Suspense } from "react";
 
 export default function SettingsPage() {
   return (
@@ -22,6 +24,9 @@ export default function SettingsPage() {
         <div className="space-y-6">
           <PlanBuilder />
           <GarminConnect />
+          <Suspense fallback={null}>
+            <StravaConnect />
+          </Suspense>
         </div>
 
         {/* Column 2 */}

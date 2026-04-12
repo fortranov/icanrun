@@ -25,6 +25,13 @@ class UserRepository(BaseRepository[User]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_strava_athlete_id(self, strava_athlete_id: int) -> Optional[User]:
+        """Find a user by their Strava athlete ID (used by webhook handler)."""
+        result = await self.db.execute(
+            select(User).where(User.strava_athlete_id == strava_athlete_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_active_subscription(self, user_id: int) -> Optional[Subscription]:
         """Return the user's currently active subscription, if any."""
         now = datetime.now(timezone.utc)

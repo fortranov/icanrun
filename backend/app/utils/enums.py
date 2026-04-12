@@ -24,6 +24,7 @@ class WorkoutSource(str, Enum):
     PLANNED = "planned"      # Created within a training plan
     MANUAL = "manual"        # Created manually by the user
     GARMIN = "garmin"        # Imported from Garmin Connect
+    STRAVA = "strava"        # Imported from Strava
 
 
 class CompetitionType(str, Enum):

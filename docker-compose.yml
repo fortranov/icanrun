@@ -15,8 +15,9 @@ services:
       - CORS_ORIGINS=["https://icanrun.ru","https://www.icanrun.ru","http://localhost:3000"]
       - GOOGLE_REDIRECT_URI=https://icanrun.ru/auth/google/callback
       - FRONTEND_URL=https://icanrun.ru
+      - STRAVA_REDIRECT_URI=https://icanrun.ru/strava/callback
     volumes:
-      - icanrun_db_data:/app/data
+      - /opt/icanrun/data:/app/data
       - ./backend/.env:/app/.env:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -44,5 +45,3 @@ services:
 # To add PostgreSQL, uncomment and configure a postgres service below,
 # update DATABASE_URL to postgresql+asyncpg://...
 
-volumes:
-  icanrun_db_data:

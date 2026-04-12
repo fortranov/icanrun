@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Garmin encryption
     garmin_encryption_key: str = "change-me-garmin-key-32-bytes!!"
 
+    # Strava OAuth
+    strava_client_id: str = ""
+    strava_client_secret: str = ""
+    strava_redirect_uri: str = "http://localhost:3000/strava/callback"
+    strava_webhook_verify_token: str = "icanrun-strava-webhook-token"
+
     # Admin user (created on startup if not exists)
     admin_email: str = "abramov.yu.v@gmail.com"
     admin_password: str = "3tuka2puka"
