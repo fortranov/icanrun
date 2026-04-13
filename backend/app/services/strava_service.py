@@ -128,6 +128,9 @@ async def _request_with_proxy_failover(
     method: str,
     url: str,
     timeout: float,
+
+    retry_on_status: tuple[int, ...] = (),
+
     **kwargs,
 ) -> httpx.Response:
     """
@@ -135,14 +138,32 @@ async def _request_with_proxy_failover(
     Raises HTTPException(503) only after all candidates fail to connect.
     """
     last_error: Exception | None = None
+
+    last_response: httpx.Response | None = None
     for proxy_url in _proxy_candidates():
         try:
             async with _http_client(timeout=timeout, proxy=proxy_url) as client:
-                return await client.request(method, url, **kwargs)
+                resp = await client.request(method, url, **kwargs)
+                if resp.status_code in retry_on_status:
+                    last_response = resp
+                    target = proxy_url or "direct connection"
+                    logger.warning(
+                        "Strava request via %s returned %s, trying next candidate",
+                        target,
+                        resp.status_code,
+                    )
+                    continue
+                return resp
+
         except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
             last_error = exc
             target = proxy_url or "direct connection"
             logger.warning("Strava request via %s failed: %s", target, exc)
+
+
+    if last_response is not None:
+        return last_response
+
 
     logger.error("Strava API unreachable through all proxy candidates: %s", last_error)
     raise HTTPException(
@@ -181,6 +202,9 @@ async def exchange_code(code: str) -> dict:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
@@ -189,10 +213,22 @@ async def exchange_code(code: str) -> dict:
         },
     )
     if resp.status_code != 200:
+        error_detail = "Failed to exchange Strava authorization code"
+        try:
+            payload = resp.json()
+            message = payload.get("message") or payload.get("errors")
+            if message:
+                error_detail = f"{error_detail}: {message}"
+        except Exception:
+            pass
         logger.error("Strava token exchange failed: %s %s", resp.status_code, resp.text)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to exchange Strava authorization code",
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if resp.status_code >= 500 or resp.status_code == 429
+                else status.HTTP_400_BAD_REQUEST
+            ),
+            detail=error_detail,
         )
     return resp.json()
 
@@ -207,6 +243,9 @@ async def _refresh_token(user: User) -> str:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
