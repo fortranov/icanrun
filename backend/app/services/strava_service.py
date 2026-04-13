@@ -99,6 +99,58 @@ def _map_sport_type(strava_sport: str) -> SportType:
     return _SPORT_MAP.get(strava_sport, SportType.RUNNING)
 
 
+def _proxy_candidates() -> list[str | None]:
+    """
+    Build ordered proxy candidates for Strava calls.
+    If STRAVA_PROXY_URL is set, try it first, then known in-cluster fallbacks.
+    """
+    configured = (settings.strava_proxy_url or "").strip()
+    candidates: list[str | None] = []
+    if configured:
+        candidates.append(configured)
+
+        if configured.startswith("socks5://"):
+            fallbacks = (
+                "socks5://icanrun-wg-socks:1080",
+                "socks5://wg-socks:1080",
+                "socks5://10.0.1.1:1080",
+            )
+            for url in fallbacks:
+                if url != configured and url not in candidates:
+                    candidates.append(url)
+
+    # Last resort for environments where Strava is reachable directly.
+    candidates.append(None)
+    return candidates
+
+
+async def _request_with_proxy_failover(
+    method: str,
+    url: str,
+    timeout: float,
+    **kwargs,
+) -> httpx.Response:
+    """
+    Perform request against Strava, trying configured proxy and fallbacks.
+    Raises HTTPException(503) only after all candidates fail to connect.
+    """
+    last_error: Exception | None = None
+    for proxy_url in _proxy_candidates():
+        try:
+            async with _http_client(timeout=timeout, proxy=proxy_url) as client:
+                return await client.request(method, url, **kwargs)
+        except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
+            last_error = exc
+            target = proxy_url or "direct connection"
+            logger.warning("Strava request via %s failed: %s", target, exc)
+
+    logger.error("Strava API unreachable through all proxy candidates: %s", last_error)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Cannot reach Strava API (proxy unavailable). Try again later.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # OAuth helpers
 # ---------------------------------------------------------------------------
@@ -125,23 +177,17 @@ async def exchange_code(code: str) -> dict:
     Exchange an authorization code for tokens.
     Returns the full token response dict from Strava.
     """
-    try:
-        async with _http_client(timeout=15.0) as client:
-            resp = await client.post(
-                _TOKEN_URL,
-                data={
-                    "client_id": settings.strava_client_id,
-                    "client_secret": settings.strava_client_secret,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                },
-            )
-    except httpx.ConnectError as exc:
-        logger.error("Strava token exchange: proxy/network unreachable: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot reach Strava API (proxy unavailable). Try again later.",
-        )
+    resp = await _request_with_proxy_failover(
+        "POST",
+        _TOKEN_URL,
+        timeout=15.0,
+        data={
+            "client_id": settings.strava_client_id,
+            "client_secret": settings.strava_client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+        },
+    )
     if resp.status_code != 200:
         logger.error("Strava token exchange failed: %s %s", resp.status_code, resp.text)
         raise HTTPException(
@@ -157,23 +203,17 @@ async def _refresh_token(user: User) -> str:
     Saves the new tokens to the user row and returns the new access token.
     NOTE: caller must commit the session after this call.
     """
-    try:
-        async with _http_client(timeout=15.0) as client:
-            resp = await client.post(
-                _TOKEN_URL,
-                data={
-                    "client_id": settings.strava_client_id,
-                    "client_secret": settings.strava_client_secret,
-                    "grant_type": "refresh_token",
-                    "refresh_token": user.strava_refresh_token,
-                },
-            )
-    except httpx.ConnectError as exc:
-        logger.error("Strava token refresh: proxy/network unreachable: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot reach Strava API (proxy unavailable). Try again later.",
-        )
+    resp = await _request_with_proxy_failover(
+        "POST",
+        _TOKEN_URL,
+        timeout=15.0,
+        data={
+            "client_id": settings.strava_client_id,
+            "client_secret": settings.strava_client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": user.strava_refresh_token,
+        },
+    )
     if resp.status_code != 200:
         logger.error("Strava token refresh failed for user %s: %s", user.id, resp.text)
         raise HTTPException(
