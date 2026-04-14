@@ -18,7 +18,7 @@ import logging
 import time
 import urllib.parse
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 from fastapi import HTTPException, status
