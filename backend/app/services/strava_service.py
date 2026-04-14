@@ -405,7 +405,23 @@ async def connect_user(user: User, code: str, db: AsyncSession) -> dict:
     Complete the Strava OAuth flow for an existing user:
     exchange the code, persist tokens, return athlete info.
     """
-    token_data = await exchange_code(code)
+    try:
+        token_data = await exchange_code(code)
+    except HTTPException as exc:
+        # OAuth authorization codes are one-time. If frontend/user retries the
+        # callback request with the same code after a successful connect, Strava
+        # returns 400. Treat that as success when account is already connected.
+        if exc.status_code == status.HTTP_400_BAD_REQUEST and user.strava_connected:
+            logger.info(
+                "Strava callback returned 400 for already connected user %s; "
+                "assuming repeated/expired OAuth code",
+                user.id,
+            )
+            return {
+                "athlete_id": user.strava_athlete_id,
+                "athlete_name": user.strava_athlete_name,
+            }
+        raise
 
     athlete = token_data.get("athlete", {})
     user.strava_athlete_id = athlete.get("id")
