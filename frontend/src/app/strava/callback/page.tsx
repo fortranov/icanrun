@@ -26,7 +26,10 @@ function StravaCallbackInner() {
     if (hasRun.current) return;
     hasRun.current = true;
 
-    const code = searchParams.get("code");
+    // URLSearchParams decodes "+" as space (x-www-form-urlencoded rules).
+    // OAuth codes may contain "+", so normalize spaces back to plus to avoid
+    // invalid_grant/400 during backend token exchange.
+    const code = searchParams.get("code")?.replace(/ /g, "+");
     const errorParam = searchParams.get("error");
 
     if (errorParam || !code) {
