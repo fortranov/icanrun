@@ -128,8 +128,9 @@ async def _request_with_proxy_failover(
     method: str,
     url: str,
     timeout: float,
+
     retry_on_status: tuple[int, ...] = (),
-    should_retry_response: Callable[[httpx.Response], bool] | None = None,
+
     **kwargs,
 ) -> httpx.Response:
     """
@@ -137,15 +138,13 @@ async def _request_with_proxy_failover(
     Raises HTTPException(503) only after all candidates fail to connect.
     """
     last_error: Exception | None = None
+
     last_response: httpx.Response | None = None
     for proxy_url in _proxy_candidates():
         try:
             async with _http_client(timeout=timeout, proxy=proxy_url) as client:
                 resp = await client.request(method, url, **kwargs)
-                needs_retry = resp.status_code in retry_on_status
-                if should_retry_response is not None and should_retry_response(resp):
-                    needs_retry = True
-                if needs_retry:
+                if resp.status_code in retry_on_status:
                     last_response = resp
                     target = proxy_url or "direct connection"
                     logger.warning(
@@ -155,31 +154,22 @@ async def _request_with_proxy_failover(
                     )
                     continue
                 return resp
+
         except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
             last_error = exc
             target = proxy_url or "direct connection"
             logger.warning("Strava request via %s failed: %s", target, exc)
 
+
     if last_response is not None:
         return last_response
+
 
     logger.error("Strava API unreachable through all proxy candidates: %s", last_error)
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Cannot reach Strava API (proxy unavailable). Try again later.",
     )
-
-
-def _looks_like_strava_oauth_error(resp: httpx.Response) -> bool:
-    """
-    Strava OAuth errors are typically JSON with message/errors fields.
-    If response doesn't match this shape, it's likely a proxy/gateway error page.
-    """
-    try:
-        payload = resp.json()
-    except Exception:
-        return False
-    return isinstance(payload, dict) and ("message" in payload or "errors" in payload)
 
 
 # ---------------------------------------------------------------------------
@@ -212,14 +202,13 @@ async def exchange_code(code: str) -> dict:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
             "code": code,
-            # Must match the redirect_uri used when obtaining the authorization code.
-            # Some OAuth providers may reject code exchange with 400/invalid_grant
-            # when this parameter is missing or does not match.
-            "redirect_uri": settings.strava_redirect_uri,
             "grant_type": "authorization_code",
         },
     )
@@ -254,6 +243,9 @@ async def _refresh_token(user: User) -> str:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
