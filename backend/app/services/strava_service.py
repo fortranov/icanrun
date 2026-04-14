@@ -128,7 +128,9 @@ async def _request_with_proxy_failover(
     method: str,
     url: str,
     timeout: float,
+
     retry_on_status: tuple[int, ...] = (),
+
     **kwargs,
 ) -> httpx.Response:
     """
@@ -136,6 +138,7 @@ async def _request_with_proxy_failover(
     Raises HTTPException(503) only after all candidates fail to connect.
     """
     last_error: Exception | None = None
+
     last_response: httpx.Response | None = None
     for proxy_url in _proxy_candidates():
         try:
@@ -151,13 +154,16 @@ async def _request_with_proxy_failover(
                     )
                     continue
                 return resp
+
         except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
             last_error = exc
             target = proxy_url or "direct connection"
             logger.warning("Strava request via %s failed: %s", target, exc)
 
+
     if last_response is not None:
         return last_response
+
 
     logger.error("Strava API unreachable through all proxy candidates: %s", last_error)
     raise HTTPException(
@@ -196,6 +202,9 @@ async def exchange_code(code: str) -> dict:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
@@ -234,6 +243,9 @@ async def _refresh_token(user: User) -> str:
         "POST",
         _TOKEN_URL,
         timeout=15.0,
+
+        retry_on_status=(429, 500, 502, 503, 504),
+
         data={
             "client_id": settings.strava_client_id,
             "client_secret": settings.strava_client_secret,
