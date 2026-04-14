@@ -18,7 +18,7 @@ import logging
 import time
 import urllib.parse
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 from fastapi import HTTPException, status
@@ -99,6 +99,89 @@ def _map_sport_type(strava_sport: str) -> SportType:
     return _SPORT_MAP.get(strava_sport, SportType.RUNNING)
 
 
+def _proxy_candidates() -> list[str | None]:
+    """
+    Build ordered proxy candidates for Strava calls.
+    If STRAVA_PROXY_URL is set, try it first, then known in-cluster fallbacks.
+    """
+    configured = (settings.strava_proxy_url or "").strip()
+    candidates: list[str | None] = []
+    if configured:
+        candidates.append(configured)
+
+        if configured.startswith("socks5://"):
+            fallbacks = (
+                "socks5://icanrun-wg-socks:1080",
+                "socks5://wg-socks:1080",
+                "socks5://10.0.1.1:1080",
+            )
+            for url in fallbacks:
+                if url != configured and url not in candidates:
+                    candidates.append(url)
+
+    # Last resort for environments where Strava is reachable directly.
+    candidates.append(None)
+    return candidates
+
+
+async def _request_with_proxy_failover(
+    method: str,
+    url: str,
+    timeout: float,
+    retry_on_status: tuple[int, ...] = (),
+    should_retry_response: Callable[[httpx.Response], bool] | None = None,
+    **kwargs,
+) -> httpx.Response:
+    """
+    Perform request against Strava, trying configured proxy and fallbacks.
+    Raises HTTPException(503) only after all candidates fail to connect.
+    """
+    last_error: Exception | None = None
+    last_response: httpx.Response | None = None
+    for proxy_url in _proxy_candidates():
+        try:
+            async with _http_client(timeout=timeout, proxy=proxy_url) as client:
+                resp = await client.request(method, url, **kwargs)
+                needs_retry = resp.status_code in retry_on_status
+                if should_retry_response is not None and should_retry_response(resp):
+                    needs_retry = True
+                if needs_retry:
+                    last_response = resp
+                    target = proxy_url or "direct connection"
+                    logger.warning(
+                        "Strava request via %s returned %s, trying next candidate",
+                        target,
+                        resp.status_code,
+                    )
+                    continue
+                return resp
+        except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
+            last_error = exc
+            target = proxy_url or "direct connection"
+            logger.warning("Strava request via %s failed: %s", target, exc)
+
+    if last_response is not None:
+        return last_response
+
+    logger.error("Strava API unreachable through all proxy candidates: %s", last_error)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Cannot reach Strava API (proxy unavailable). Try again later.",
+    )
+
+
+def _looks_like_strava_oauth_error(resp: httpx.Response) -> bool:
+    """
+    Strava OAuth errors are typically JSON with message/errors fields.
+    If response doesn't match this shape, it's likely a proxy/gateway error page.
+    """
+    try:
+        payload = resp.json()
+    except Exception:
+        return False
+    return isinstance(payload, dict) and ("message" in payload or "errors" in payload)
+
+
 # ---------------------------------------------------------------------------
 # OAuth helpers
 # ---------------------------------------------------------------------------
@@ -125,28 +208,40 @@ async def exchange_code(code: str) -> dict:
     Exchange an authorization code for tokens.
     Returns the full token response dict from Strava.
     """
-    try:
-        async with _http_client(timeout=15.0) as client:
-            resp = await client.post(
-                _TOKEN_URL,
-                data={
-                    "client_id": settings.strava_client_id,
-                    "client_secret": settings.strava_client_secret,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                },
-            )
-    except httpx.ConnectError as exc:
-        logger.error("Strava token exchange: proxy/network unreachable: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot reach Strava API (proxy unavailable). Try again later.",
-        )
+    resp = await _request_with_proxy_failover(
+        "POST",
+        _TOKEN_URL,
+        timeout=15.0,
+        retry_on_status=(429, 500, 502, 503, 504),
+        should_retry_response=lambda r: r.status_code == 400 and not _looks_like_strava_oauth_error(r),
+        data={
+            "client_id": settings.strava_client_id,
+            "client_secret": settings.strava_client_secret,
+            "code": code,
+            # Must match the redirect_uri used when obtaining the authorization code.
+            # Some OAuth providers may reject code exchange with 400/invalid_grant
+            # when this parameter is missing or does not match.
+            "redirect_uri": settings.strava_redirect_uri,
+            "grant_type": "authorization_code",
+        },
+    )
     if resp.status_code != 200:
+        error_detail = "Failed to exchange Strava authorization code"
+        try:
+            payload = resp.json()
+            message = payload.get("message") or payload.get("errors")
+            if message:
+                error_detail = f"{error_detail}: {message}"
+        except Exception:
+            pass
         logger.error("Strava token exchange failed: %s %s", resp.status_code, resp.text)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to exchange Strava authorization code",
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if resp.status_code >= 500 or resp.status_code == 429
+                else status.HTTP_400_BAD_REQUEST
+            ),
+            detail=error_detail,
         )
     return resp.json()
 
@@ -157,23 +252,17 @@ async def _refresh_token(user: User) -> str:
     Saves the new tokens to the user row and returns the new access token.
     NOTE: caller must commit the session after this call.
     """
-    try:
-        async with _http_client(timeout=15.0) as client:
-            resp = await client.post(
-                _TOKEN_URL,
-                data={
-                    "client_id": settings.strava_client_id,
-                    "client_secret": settings.strava_client_secret,
-                    "grant_type": "refresh_token",
-                    "refresh_token": user.strava_refresh_token,
-                },
-            )
-    except httpx.ConnectError as exc:
-        logger.error("Strava token refresh: proxy/network unreachable: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot reach Strava API (proxy unavailable). Try again later.",
-        )
+    resp = await _request_with_proxy_failover(
+        "POST",
+        _TOKEN_URL,
+        timeout=15.0,
+        data={
+            "client_id": settings.strava_client_id,
+            "client_secret": settings.strava_client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": user.strava_refresh_token,
+        },
+    )
     if resp.status_code != 200:
         logger.error("Strava token refresh failed for user %s: %s", user.id, resp.text)
         raise HTTPException(
