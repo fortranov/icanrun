@@ -211,8 +211,8 @@ async def test_login_inactive_user(client: AsyncClient, db_session: AsyncSession
         "/api/v1/auth/login",
         json={"email": "inactive@example.com", "password": "password123"},
     )
-    assert response.status_code == 400
-    assert "disabled" in response.json()["detail"].lower()
+    assert response.status_code == 403
+    assert "заблокирован" in response.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +477,99 @@ async def test_update_profile_unauthenticated(client: AsyncClient):
     response = await client.patch(
         "/api/v1/users/me",
         json={"name": "Hacker"},
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PATCH /users/me/password
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_change_password_success(client: AsyncClient, regular_user: User):
+    """User can change password after providing the current password."""
+    headers = await get_auth_headers(client, "testuser@example.com", "testpassword123")
+
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "testpassword123",
+            "new_password": "newpassword123",
+        },
+    )
+
+    assert response.status_code == 204
+
+    old_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "testuser@example.com", "password": "testpassword123"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "testuser@example.com", "password": "newpassword123"},
+    )
+    assert new_login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_wrong_current_password(
+    client: AsyncClient,
+    regular_user: User,
+):
+    """Wrong current password is rejected and does not change the password."""
+    headers = await get_auth_headers(client, "testuser@example.com", "testpassword123")
+
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "wrongpassword123",
+            "new_password": "newpassword123",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "current password" in response.json()["detail"].lower()
+
+    old_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "testuser@example.com", "password": "testpassword123"},
+    )
+    assert old_login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_short_new_password(
+    client: AsyncClient,
+    regular_user: User,
+):
+    """New password must satisfy the same length policy as registration."""
+    headers = await get_auth_headers(client, "testuser@example.com", "testpassword123")
+
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "testpassword123",
+            "new_password": "short",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_unauthenticated(client: AsyncClient):
+    """Unauthenticated password change returns 401."""
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        json={
+            "current_password": "testpassword123",
+            "new_password": "newpassword123",
+        },
     )
     assert response.status_code == 401
 

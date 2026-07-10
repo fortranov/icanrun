@@ -12,6 +12,7 @@ import { SubscriptionBlock } from "@/components/settings/SubscriptionBlock";
 import { PlanBuilder } from "@/components/settings/PlanBuilder";
 import { GarminConnect } from "@/components/settings/GarminConnect";
 import { StravaConnect } from "@/components/settings/StravaConnect";
+import { PasswordChange } from "@/components/settings/PasswordChange";
 import { Suspense } from "react";
 
 export default function SettingsPage() {
@@ -30,7 +31,8 @@ export default function SettingsPage() {
         </div>
 
         {/* Column 2 */}
-        <div>
+        <div className="space-y-6">
+          <PasswordChange />
           <SubscriptionBlock />
         </div>
       </div>
