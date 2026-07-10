@@ -166,6 +166,12 @@ export const authApi = {
 
   me: () => apiClient.get("/users/me"),
 
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiClient.patch("/users/me/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+
   confirmEmail: (token: string) =>
     apiClient.post(`/auth/confirm-email?token=${encodeURIComponent(token)}`),
 

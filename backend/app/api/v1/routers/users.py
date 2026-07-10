@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.security import hash_password, verify_password
 from app.repositories.user_repository import UserRepository
 from app.schemas.subscription import SubscriptionResponse
-from app.schemas.user import UserResponse, UserUpdate
+from app.schemas.user import UserPasswordChange, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 logger = logging.getLogger(__name__)
@@ -91,3 +92,27 @@ async def update_me(
         **UserResponse.model_validate(current_user).model_dump(),
         subscription=SubscriptionResponse.model_validate(subscription) if subscription else None,
     )
+
+
+@router.patch(
+    "/me/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change current user password",
+)
+async def change_password(
+    data: UserPasswordChange,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Change the current user's password after verifying the current password.
+    """
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.hashed_password = hash_password(data.new_password)
+    await db.flush()
+    logger.info("User password changed: id=%s", current_user.id)
