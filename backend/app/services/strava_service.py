@@ -23,6 +23,7 @@ import time
 import urllib.parse
 from datetime import date, datetime, timezone
 from typing import Callable, Optional
+from time import perf_counter
 
 import httpx
 from fastapi import HTTPException, status
@@ -47,6 +48,26 @@ from app.repositories.workout_repository import WorkoutRepository
 from app.utils.enums import SportType, WorkoutSource
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_proxy_label(proxy_url: str | None) -> str:
+    """Return a non-secret proxy label for diagnostics."""
+    if not proxy_url:
+        return "direct"
+    parsed = urllib.parse.urlparse(proxy_url)
+    host = parsed.hostname or "unknown-host"
+    port = f":{parsed.port}" if parsed.port else ""
+    scheme = parsed.scheme or "proxy"
+    return f"{scheme}://{host}{port}"
+
+
+def _safe_url_path(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.path or url
+
+
+def _safe_excerpt(text: str, limit: int = 240) -> str:
+    return (text or "").replace("\n", " ").replace("\r", " ")[:limit]
 
 # ---------------------------------------------------------------------------
 # Strava API base URLs
@@ -165,24 +186,48 @@ async def _request_with_proxy_failover(
 
     last_response: httpx.Response | None = None
     for proxy_url in _proxy_candidates():
+        target = _safe_proxy_label(proxy_url)
+        started = perf_counter()
+        logger.info(
+            "Strava HTTP request start method=%s path=%s proxy=%s retry_on_status=%s",
+            method,
+            _safe_url_path(url),
+            target,
+            retry_on_status,
+        )
         try:
             async with _http_client(timeout=timeout, proxy=proxy_url) as client:
                 resp = await client.request(method, url, **kwargs)
+                elapsed_ms = int((perf_counter() - started) * 1000)
+                logger.info(
+                    "Strava HTTP response method=%s path=%s proxy=%s status=%s elapsed_ms=%s",
+                    method,
+                    _safe_url_path(url),
+                    target,
+                    resp.status_code,
+                    elapsed_ms,
+                )
                 if resp.status_code in retry_on_status:
                     last_response = resp
-                    target = proxy_url or "direct connection"
                     logger.warning(
-                        "Strava request via %s returned %s, trying next candidate",
+                        "Strava request retryable status via %s: status=%s body=%s",
                         target,
                         resp.status_code,
+                        _safe_excerpt(resp.text),
                     )
                     continue
                 return resp
 
-        except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout) as exc:
+        except (httpx.ConnectError, httpx.ProxyError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
             last_error = exc
-            target = proxy_url or "direct connection"
-            logger.warning("Strava request via %s failed: %s", target, exc)
+            elapsed_ms = int((perf_counter() - started) * 1000)
+            logger.warning(
+                "Strava request transport failure proxy=%s elapsed_ms=%s error_type=%s error=%s",
+                target,
+                elapsed_ms,
+                type(exc).__name__,
+                exc,
+            )
 
 
     if last_response is not None:
@@ -248,6 +293,12 @@ def build_auth_url(user_id: int) -> str:
         "approval_prompt": "auto",
         "state": build_oauth_state(user_id),
     }
+    logger.info(
+        "Strava auth URL built user_id=%s redirect_uri=%s proxy_configured=%s",
+        user_id,
+        settings.strava_redirect_uri,
+        bool(settings.strava_proxy_url),
+    )
     return _AUTH_URL + "?" + urllib.parse.urlencode(params)
 
 
@@ -269,6 +320,13 @@ async def exchange_code(code: str) -> dict:
     Exchange an authorization code for tokens.
     Returns the full token response dict from Strava.
     """
+    logger.info(
+        "Strava token exchange start code_present=%s code_len=%s client_id_configured=%s redirect_uri=%s",
+        bool(code),
+        len(code or ""),
+        bool(settings.strava_client_id),
+        settings.strava_redirect_uri,
+    )
     resp = await _request_with_proxy_failover(
         "POST",
         _TOKEN_URL,
@@ -292,7 +350,7 @@ async def exchange_code(code: str) -> dict:
                 error_detail = f"{error_detail}: {message}"
         except Exception:
             pass
-        logger.error("Strava token exchange failed: %s %s", resp.status_code, resp.text)
+        logger.error("Strava token exchange failed: status=%s body=%s", resp.status_code, _safe_excerpt(resp.text))
         raise HTTPException(
             status_code=(
                 status.HTTP_503_SERVICE_UNAVAILABLE
@@ -301,7 +359,14 @@ async def exchange_code(code: str) -> dict:
             ),
             detail=error_detail,
         )
-    return resp.json()
+    data = resp.json()
+    logger.info(
+        "Strava token exchange success athlete_id=%s scope=%s expires_at_present=%s",
+        (data.get("athlete") or {}).get("id") if isinstance(data, dict) else None,
+        data.get("scope") if isinstance(data, dict) else None,
+        bool(data.get("expires_at")) if isinstance(data, dict) else False,
+    )
+    return data
 
 
 async def _refresh_token(user: User) -> str:
@@ -392,6 +457,7 @@ async def sync_activities(user: User, db: AsyncSession, days: int = 30) -> dict:
     """
     token = await get_valid_access_token(user, db)
     repo = WorkoutRepository(db)
+    logger.info("Strava sync start user_id=%s days=%s", user.id, days)
 
     # epoch timestamp for `after` filter
     after_ts = int(time.time()) - days * 86400
@@ -416,6 +482,7 @@ async def sync_activities(user: User, db: AsyncSession, days: int = 30) -> dict:
             )
 
         activities = resp.json()
+        logger.info("Strava sync page received user_id=%s page=%s activities=%s", user.id, page, len(activities) if isinstance(activities, list) else "non-list")
         if not activities:
             break
 
@@ -488,6 +555,7 @@ async def connect_user(user: User, code: str, db: AsyncSession) -> dict:
     Complete the Strava OAuth flow for an existing user:
     exchange the code, persist tokens, return athlete info.
     """
+    logger.info("Strava connect start user_id=%s already_connected=%s", user.id, user.strava_connected)
     try:
         token_data = await exchange_code(code)
     except HTTPException as exc:
@@ -518,7 +586,13 @@ async def connect_user(user: User, code: str, db: AsyncSession) -> dict:
     user.strava_scope = token_data.get("scope") or "activity:read_all,profile:read_all"
 
     await db.commit()
-    logger.info("User %s connected Strava (athlete_id=%s)", user.id, user.strava_athlete_id)
+    logger.info(
+        "User %s connected Strava athlete_id=%s scope=%s token_expires_at=%s",
+        user.id,
+        user.strava_athlete_id,
+        user.strava_scope,
+        user.strava_token_expires_at,
+    )
 
     return {
         "athlete_id": user.strava_athlete_id,
