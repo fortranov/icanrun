@@ -37,6 +37,7 @@ class StravaAuthUrlResponse(BaseModel):
 
 class StravaCallbackRequest(BaseModel):
     code: str
+    state: str
 
 
 class StravaCallbackResponse(BaseModel):
@@ -69,7 +70,7 @@ async def get_strava_auth_url(current_user: CurrentUser) -> StravaAuthUrlRespons
     Return the URL the user should be redirected to in order to authorize Strava.
     The redirect_uri must be registered in your Strava API application settings.
     """
-    auth_url = strava_service.build_auth_url()
+    auth_url = strava_service.build_auth_url(current_user.id)
     return StravaAuthUrlResponse(auth_url=auth_url)
 
 
@@ -92,6 +93,11 @@ async def strava_callback(
     Exchanges the code for tokens and stores them in the database.
     Tokens persist across container restarts because the DB lives on a mounted volume.
     """
+    if not strava_service.validate_oauth_state(data.state, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Strava OAuth state",
+        )
     result = await strava_service.connect_user(current_user, data.code, db)
     return StravaCallbackResponse(
         athlete_id=result["athlete_id"],
