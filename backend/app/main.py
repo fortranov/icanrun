@@ -12,6 +12,11 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import create_tables
 
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 

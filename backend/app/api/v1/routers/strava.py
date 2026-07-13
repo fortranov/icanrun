@@ -94,10 +94,24 @@ async def strava_callback(
     Tokens persist across container restarts because the DB lives on a mounted volume.
     """
     if not strava_service.validate_oauth_state(data.state, current_user.id):
+        logger.warning(
+            "Strava callback rejected invalid state user_id=%s state_present=%s state_len=%s code_present=%s code_len=%s",
+            current_user.id,
+            bool(data.state),
+            len(data.state or ""),
+            bool(data.code),
+            len(data.code or ""),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Strava OAuth state",
         )
+    logger.info(
+        "Strava callback accepted user_id=%s state_len=%s code_len=%s",
+        current_user.id,
+        len(data.state or ""),
+        len(data.code or ""),
+    )
     result = await strava_service.connect_user(current_user, data.code, db)
     return StravaCallbackResponse(
         athlete_id=result["athlete_id"],

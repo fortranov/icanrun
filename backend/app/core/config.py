@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     app_name: str = "ICanRun Triathlon App"
     app_env: str = "development"
     debug: bool = True
+    log_level: str = "INFO"
     secret_key: str = "change-me-in-production-must-be-at-least-32-characters-long"
 
     # Database
