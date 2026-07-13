@@ -15,6 +15,10 @@ Token persistence:
   does NOT wipe the volume, so tokens survive deploys without any extra work.
 """
 import logging
+import base64
+import hashlib
+import hmac
+import secrets
 import time
 import urllib.parse
 from datetime import date, datetime, timezone
@@ -54,7 +58,8 @@ _API_BASE = "https://www.strava.com/api/v3"
 
 # ---------------------------------------------------------------------------
 # Strava sport_type → our SportType enum
-# Unmapped types default to running (catch-all for unknown activities).
+# Unmapped types default to strength/cross-training so unusual Strava sports
+# do not pollute running statistics.
 # ---------------------------------------------------------------------------
 _SPORT_MAP: dict[str, SportType] = {
     # Running family
@@ -96,7 +101,26 @@ _SPORT_MAP: dict[str, SportType] = {
 
 
 def _map_sport_type(strava_sport: str) -> SportType:
-    return _SPORT_MAP.get(strava_sport, SportType.RUNNING)
+    return _SPORT_MAP.get(strava_sport, SportType.STRENGTH)
+
+
+def _strava_api_error(status_code: int, response_text: str, fallback: str) -> HTTPException:
+    """Convert a Strava HTTP error into a user-visible API error."""
+    if status_code in (401, 403):
+        api_status = status.HTTP_401_UNAUTHORIZED
+        detail = "Strava authorization failed. Please reconnect Strava."
+    elif status_code == 429:
+        api_status = status.HTTP_429_TOO_MANY_REQUESTS
+        detail = "Strava Rate Limit Exceeded. Try again later."
+    elif status_code >= 500:
+        api_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = "Strava is temporarily unavailable. Try again later."
+    else:
+        api_status = status.HTTP_502_BAD_GATEWAY
+        detail = fallback
+
+    logger.error("Strava API error %s: %s", status_code, response_text)
+    return HTTPException(status_code=api_status, detail=detail)
 
 
 def _proxy_candidates() -> list[str | None]:
@@ -176,7 +200,40 @@ async def _request_with_proxy_failover(
 # OAuth helpers
 # ---------------------------------------------------------------------------
 
-def build_auth_url() -> str:
+def _state_signature(payload: str) -> str:
+    digest = hmac.new(
+        settings.secret_key.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def build_oauth_state(user_id: int) -> str:
+    """Build a signed OAuth state value bound to a user id."""
+    payload = f"{user_id}:{int(time.time())}:{secrets.token_urlsafe(16)}"
+    return f"{payload}:{_state_signature(payload)}"
+
+
+def validate_oauth_state(state_value: str | None, user_id: int, max_age_seconds: int = 600) -> bool:
+    """Validate a signed OAuth state value and ensure it belongs to user_id."""
+    if not state_value:
+        return False
+    try:
+        user_part, ts_part, nonce_part, signature = state_value.split(":", 3)
+        payload = f"{user_part}:{ts_part}:{nonce_part}"
+        if not hmac.compare_digest(signature, _state_signature(payload)):
+            return False
+        if int(user_part) != int(user_id):
+            return False
+        if int(time.time()) - int(ts_part) > max_age_seconds:
+            return False
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def build_auth_url(user_id: int) -> str:
     """Return the Strava OAuth2 authorization URL."""
     if not settings.strava_client_id:
         raise HTTPException(
@@ -189,8 +246,22 @@ def build_auth_url() -> str:
         "response_type": "code",
         "scope": "activity:read_all,profile:read_all",
         "approval_prompt": "auto",
+        "state": build_oauth_state(user_id),
     }
     return _AUTH_URL + "?" + urllib.parse.urlencode(params)
+
+
+def _require_activity_scope(token_data: dict) -> None:
+    granted = {
+        item.strip()
+        for item in (token_data.get("scope") or "").split(",")
+        if item.strip()
+    }
+    if "activity:read_all" not in granted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Strava did not grant required scope: activity:read_all",
+        )
 
 
 async def exchange_code(code: str) -> dict:
@@ -328,34 +399,44 @@ async def sync_activities(user: User, db: AsyncSession, days: int = 30) -> dict:
     skipped = 0
     page = 1
 
-    async with _http_client(timeout=30.0) as client:
-        while True:
-            resp = await client.get(
-                f"{_API_BASE}/athlete/activities",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"after": after_ts, "per_page": 100, "page": page},
+    while True:
+        resp = await _request_with_proxy_failover(
+            "GET",
+            f"{_API_BASE}/athlete/activities",
+            timeout=30.0,
+            retry_on_status=(429, 500, 502, 503, 504),
+            headers={"Authorization": f"Bearer {token}"},
+            params={"after": after_ts, "per_page": 100, "page": page},
+        )
+        if resp.status_code != 200:
+            raise _strava_api_error(
+                resp.status_code,
+                resp.text,
+                "Failed to fetch Strava activities",
             )
-            if resp.status_code != 200:
-                logger.error("Strava activities fetch failed: %s %s", resp.status_code, resp.text)
-                break
 
-            activities = resp.json()
-            if not activities:
-                break
+        activities = resp.json()
+        if not activities:
+            break
 
-            for activity in activities:
-                existing = await repo.get_by_strava_id(activity["id"])
-                if existing:
-                    skipped += 1
-                    continue
-                workout = _map_activity_to_workout(activity, user.id)
-                db.add(workout)
-                synced += 1
+        for activity in activities:
+            activity_id = activity.get("id")
+            if not activity_id:
+                logger.warning("Skipping Strava activity without id: %s", activity)
+                skipped += 1
+                continue
+            existing = await repo.get_by_user_and_strava_id(user.id, activity_id)
+            if existing:
+                skipped += 1
+                continue
+            workout = _map_activity_to_workout(activity, user.id)
+            db.add(workout)
+            synced += 1
 
-            await db.flush()
-            if len(activities) < 100:
-                break
-            page += 1
+        await db.flush()
+        if len(activities) < 100:
+            break
+        page += 1
 
     await db.commit()
     logger.info("Strava sync for user %s: synced=%s skipped=%s", user.id, synced, skipped)
@@ -373,15 +454,17 @@ async def fetch_and_save_activity(
     token = await get_valid_access_token(user, db)
     repo = WorkoutRepository(db)
 
-    existing = await repo.get_by_strava_id(strava_activity_id)
+    existing = await repo.get_by_user_and_strava_id(user.id, strava_activity_id)
     if existing:
         return None
 
-    async with _http_client(timeout=15.0) as client:
-        resp = await client.get(
-            f"{_API_BASE}/activities/{strava_activity_id}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    resp = await _request_with_proxy_failover(
+        "GET",
+        f"{_API_BASE}/activities/{strava_activity_id}",
+        timeout=15.0,
+        retry_on_status=(429, 500, 502, 503, 504),
+        headers={"Authorization": f"Bearer {token}"},
+    )
     if resp.status_code != 200:
         logger.error(
             "Failed to fetch Strava activity %s for user %s: %s",
@@ -423,6 +506,8 @@ async def connect_user(user: User, code: str, db: AsyncSession) -> dict:
             }
         raise
 
+    _require_activity_scope(token_data)
+
     athlete = token_data.get("athlete", {})
     user.strava_athlete_id = athlete.get("id")
     user.strava_athlete_name = f"{athlete.get('firstname', '')} {athlete.get('lastname', '')}".strip() or None
@@ -447,11 +532,13 @@ async def disconnect_user(user: User, db: AsyncSession) -> None:
     """
     if user.strava_access_token:
         try:
-            async with _http_client(timeout=10.0) as client:
-                await client.post(
-                    _DEAUTH_URL,
-                    data={"access_token": user.strava_access_token},
-                )
+            await _request_with_proxy_failover(
+                "POST",
+                _DEAUTH_URL,
+                timeout=10.0,
+                retry_on_status=(429, 500, 502, 503, 504),
+                data={"access_token": user.strava_access_token},
+            )
         except Exception as exc:
             logger.warning("Strava deauth request failed (ignoring): %s", exc)
 

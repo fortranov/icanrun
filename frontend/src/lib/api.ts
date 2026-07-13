@@ -284,8 +284,8 @@ export const stravaApi = {
   getAuthUrl: (): Promise<{ auth_url: string }> =>
     apiClient.get("/strava/auth").then((r) => r.data),
 
-  callback: (code: string): Promise<{ athlete_id: number; athlete_name: string }> =>
-    apiClient.post("/strava/callback", { code }).then((r) => r.data),
+  callback: (code: string, state: string): Promise<{ athlete_id: number; athlete_name: string }> =>
+    apiClient.post("/strava/callback", { code, state }).then((r) => r.data),
 
   sync: (days = 30): Promise<{ synced: number; skipped: number }> =>
     apiClient.post(`/strava/sync?days=${days}`).then((r) => r.data),

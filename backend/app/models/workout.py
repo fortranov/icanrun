@@ -4,7 +4,7 @@ Workout ORM model.
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Enum as SAEnum
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,6 +13,9 @@ from app.utils.enums import SportType, WorkoutSource, WorkoutType
 
 class Workout(Base):
     __tablename__ = "workouts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "strava_activity_id", name="uq_workouts_user_strava_activity_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(

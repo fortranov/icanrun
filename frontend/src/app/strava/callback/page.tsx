@@ -30,16 +30,17 @@ function StravaCallbackInner() {
     // OAuth codes may contain "+", so normalize spaces back to plus to avoid
     // invalid_grant/400 during backend token exchange.
     const code = searchParams.get("code")?.replace(/ /g, "+");
+    const state = searchParams.get("state");
     const errorParam = searchParams.get("error");
 
-    if (errorParam || !code) {
+    if (errorParam || !code || !state) {
       // User denied Strava access
       router.replace("/settings?strava=error");
       return;
     }
 
     stravaApi
-      .callback(code)
+      .callback(code, state)
       .then(() => {
         router.replace("/settings?strava=connected");
       })
