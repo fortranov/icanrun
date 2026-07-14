@@ -8,23 +8,35 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { TopMenu } from "@/components/layout/TopMenu";
+import { getAccessToken, getRefreshToken } from "@/lib/api";
+import { useCurrentUser } from "@/hooks/useAuth";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const { hasHydrated, isAuthenticated } = useAuthStore();
   const router = useRouter();
+  const currentUserQuery = useCurrentUser();
+  const hasStoredSession =
+    typeof window !== "undefined" && (!!getAccessToken() || !!getRefreshToken());
+  const isCheckingSession =
+    !hasHydrated || (hasStoredSession && currentUserQuery.isPending);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!hasHydrated || isCheckingSession) return;
+    if (!isAuthenticated && !hasStoredSession) {
       router.replace("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [hasHydrated, hasStoredSession, isAuthenticated, isCheckingSession, router]);
 
-  if (!isAuthenticated) {
+  if (isCheckingSession || (!isAuthenticated && hasStoredSession)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-500">Загрузка...</div>
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (

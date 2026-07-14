@@ -8,9 +8,10 @@
  */
 "use client";
 
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { apiClient, authApi, clearTokens, getAccessToken, setTokens } from "@/lib/api";
+import { apiClient, authApi, clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import type { Subscription, User } from "@/types";
 import type { AxiosError } from "axios";
@@ -65,10 +66,10 @@ export function extractErrorMessage(error: unknown, fallback = "Произошл
  * Only runs when an access token is present (user is logged in).
  */
 export function useCurrentUser() {
-  const { login, logout } = useAuthStore();
+  const { logout, setSubscription, setUser } = useAuthStore();
   const hasToken = typeof window !== "undefined" && !!getAccessToken();
 
-  return useQuery<MeResponse>({
+  const query = useQuery<MeResponse>({
     queryKey: authKeys.me,
     queryFn: async () => {
       const res = await apiClient.get<MeResponse>("/users/me");
@@ -77,11 +78,23 @@ export function useCurrentUser() {
     enabled: hasToken,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: false,
-    select: (data) => {
-      // Sync to store whenever data is fetched
-      return data;
-    },
   });
+
+  useEffect(() => {
+    if (!query.data) return;
+    const { subscription, ...user } = query.data;
+    setUser(user as User);
+    setSubscription(subscription ?? null);
+  }, [query.data, setSubscription, setUser]);
+
+  useEffect(() => {
+    if (!query.isError) return;
+    if (!getAccessToken() && !getRefreshToken()) {
+      logout();
+    }
+  }, [logout, query.isError]);
+
+  return query;
 }
 
 // ---------------------------------------------------------------------------
