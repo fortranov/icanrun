@@ -14,9 +14,11 @@ interface AuthState {
   subscription: Subscription | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasHydrated: boolean;
 
   setUser: (user: User | null) => void;
   setSubscription: (subscription: Subscription | null) => void;
+  setHasHydrated: (hasHydrated: boolean) => void;
   login: (user: User, accessToken: string, refreshToken: string, subscription?: Subscription) => void;
   logout: () => void;
   setLoading: (loading: boolean) => void;
@@ -29,12 +31,15 @@ export const useAuthStore = create<AuthState>()(
       subscription: null,
       isAuthenticated: false,
       isLoading: false,
+      hasHydrated: false,
 
       setUser: (user) =>
         set({ user, isAuthenticated: user !== null }),
 
       setSubscription: (subscription) =>
         set({ subscription }),
+
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
 
       login: (user, accessToken, refreshToken, subscription) => {
         setTokens(accessToken, refreshToken);
@@ -66,6 +71,9 @@ export const useAuthStore = create<AuthState>()(
         subscription: state.subscription,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );
