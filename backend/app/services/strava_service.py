@@ -302,12 +302,17 @@ def build_auth_url(user_id: int) -> str:
     return _AUTH_URL + "?" + urllib.parse.urlencode(params)
 
 
-def _require_activity_scope(token_data: dict) -> None:
-    granted = {
+def _parse_strava_scope(scope_value: str | None) -> set[str]:
+    """Parse Strava scopes returned either comma- or space-separated."""
+    return {
         item.strip()
-        for item in (token_data.get("scope") or "").split(",")
+        for item in (scope_value or "").replace(",", " ").split()
         if item.strip()
     }
+
+
+def _require_activity_scope(token_data: dict) -> None:
+    granted = _parse_strava_scope(token_data.get("scope"))
     if "activity:read_all" not in granted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
